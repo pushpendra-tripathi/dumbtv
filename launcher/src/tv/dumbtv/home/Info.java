@@ -8,9 +8,7 @@ import java.util.Locale;
  */
 final class Info {
     static final long MINUTE = 60_000L, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
-    /** A race weekend shows in the hero this long before the race starts. */
-    static final long RACE_WEEK = 7 * DAY;
-    /** ...and keeps showing this long after it, while the race may still be running. */
+    /** How long after its start a race still counts as the next one: it may still be running. */
     static final long RACE_LENGTH = 3 * HOUR;
 
     private Info() {}
@@ -70,14 +68,9 @@ final class Info {
         return s.toString().toUpperCase(Locale.ROOT);
     }
 
-    /** The app whose tile shows the F1 schedule all season, not only in race week: FanCode. */
+    /** The one app whose tile shows the F1 race card in the hero: FanCode, which streams F1. */
     static boolean showsF1(String pkg) {
         return "com.fancode.tv".equals(pkg);
-    }
-
-    /** True while a race at {@code at} is close enough, or recent enough, to fill the hero. */
-    static boolean raceWeek(long now, long at) {
-        return at > 0 && now >= at - RACE_WEEK && now <= at + RACE_LENGTH;
     }
 
     /**

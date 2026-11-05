@@ -966,7 +966,7 @@ public final class Home extends Activity {
         stopSlides();
         // 2. Race week: the weekend's sessions over the app's art. 3. Otherwise the app's name.
         Feeds.Race race = feeds.race;
-        if (race != null && (Info.raceWeek(System.currentTimeMillis(), race.at) || Info.showsF1(it.id))) {
+        if (race != null && Info.showsF1(it.id)) {
             heroText(race.name, sessions(race));
             kicker(Info.raceLine(race.round, race.place));
             if (race.map != null) {
@@ -1036,7 +1036,7 @@ public final class Home extends Activity {
                 Item f = focusedItem();
                 Feeds.Race r = feeds.race;
                 if (f == null || r == null || !map.equals(r.map) || heroSlides != null) return;
-                if (!Info.raceWeek(System.currentTimeMillis(), r.at) && !Info.showsF1(f.id)) return;
+                if (!Info.showsF1(f.id)) return;
                 showHero(b == null ? null : key, b);
             });
         });

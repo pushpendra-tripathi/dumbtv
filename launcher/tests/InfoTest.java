@@ -24,19 +24,13 @@ public final class InfoTest {
         check("1h 0m".equals(Info.countdown(0, 59 * m + 30_000)), "59.5 minutes is an hour, not 60m");
         check("now".equals(Info.countdown(10, 10)), "at the start");
 
-        long race = 30 * d;
-        check(!Info.raceWeek(race - 8 * d, race), "eight days out is not race week");
-        check(Info.raceWeek(race - 6 * d, race), "six days out is race week");
-        check(Info.raceWeek(race + 2 * h, race), "during the race");
-        check(!Info.raceWeek(race + 4 * h, race), "after the race");
-        check(!Info.raceWeek(race, 0), "no race");
         check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
         check("https://u/thumb/c/cf/x.svg/960px-x.svg.png?a=1".equals(
                 Info.thumb("https://u/thumb/c/cf/x.svg/1920px-x.svg.png?a=1", 960)), "thumbnail resized");
         check("https://u/x.png".equals(Info.thumb("https://u/x.png", 960)), "a plain URL is left alone");
         check("ROUND 20  ·  SÃO PAULO, BRAZIL".equals(Info.raceLine("20", "São Paulo, Brazil")), "race line");
         check("ROUND 20".equals(Info.raceLine("20", ", ")), "no place");
-        check(!Info.showsF1("com.netflix.ninja"), "other apps only in race week");
+        check(!Info.showsF1("com.netflix.ninja"), "no other app shows the race card");
 
         check(Info.provides("Netflix", "com.netflix.ninja"), "Netflix");
         check(Info.provides("Amazon Prime Video", "com.amazon.firebat"), "Prime Video");
