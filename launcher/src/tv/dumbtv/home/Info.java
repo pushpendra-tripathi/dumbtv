@@ -54,6 +54,22 @@ final class Info {
         return m + "m";
     }
 
+    /** A Wikimedia thumbnail URL resized to {@code width} px; any other URL unchanged. */
+    static String thumb(String url, int width) {
+        return url == null ? null : url.replaceFirst("/\\d+px-", "/" + width + "px-");
+    }
+
+    /** "ROUND 20  ·  SÃO PAULO, BRAZIL", or just the part that is known. */
+    static String raceLine(String round, String place) {
+        StringBuilder s = new StringBuilder();
+        if (round != null && !round.isEmpty()) s.append("Round ").append(round);
+        if (place != null && !place.replace(",", "").trim().isEmpty()) {
+            if (s.length() > 0) s.append("  ·  ");
+            s.append(place.trim());
+        }
+        return s.toString().toUpperCase(Locale.ROOT);
+    }
+
     /** The app whose tile shows the F1 schedule all season, not only in race week: FanCode. */
     static boolean showsF1(String pkg) {
         return "com.fancode.tv".equals(pkg);

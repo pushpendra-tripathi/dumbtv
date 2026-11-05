@@ -31,6 +31,11 @@ public final class InfoTest {
         check(!Info.raceWeek(race + 4 * h, race), "after the race");
         check(!Info.raceWeek(race, 0), "no race");
         check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
+        check("https://u/thumb/c/cf/x.svg/960px-x.svg.png?a=1".equals(
+                Info.thumb("https://u/thumb/c/cf/x.svg/1920px-x.svg.png?a=1", 960)), "thumbnail resized");
+        check("https://u/x.png".equals(Info.thumb("https://u/x.png", 960)), "a plain URL is left alone");
+        check("ROUND 20  ·  SÃO PAULO, BRAZIL".equals(Info.raceLine("20", "São Paulo, Brazil")), "race line");
+        check("ROUND 20".equals(Info.raceLine("20", ", ")), "no place");
         check(!Info.showsF1("com.netflix.ninja"), "other apps only in race week");
 
         check(Info.provides("Netflix", "com.netflix.ninja"), "Netflix");

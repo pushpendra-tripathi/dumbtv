@@ -116,6 +116,9 @@ per app. A title on two installed services shows under the first of them in your
 OK on a slide opens the app, not the title: TMDB does not know the apps' own title ids.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
+The F1 race card shows the next circuit's track map: the lead image of its Wikipedia article,
+from Wikimedia Commons under that file's own licence, fetched once per circuit.
+
 The key stays in `home.conf` on the TV. Set it over adb (on Fire OS 8, push to the media
 folder, see below):
 

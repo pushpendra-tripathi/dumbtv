@@ -101,6 +101,7 @@ public final class Home extends Activity {
     private final Map<String, Bitmap> heroCache = new HashMap<>();
     private LinearLayout heroBox;
     private TextView heroSub;
+    private TextView heroKicker;
     /** Live feeds: weather and the next race under the clock, new releases in the hero. */
     private Feeds feeds;
     private final ExecutorService net = Executors.newSingleThreadExecutor();
@@ -653,6 +654,11 @@ public final class Home extends Activity {
         heroBox.setGravity(Gravity.BOTTOM | Gravity.START);
         heroBox.setPadding(dp(56), 0, dp(56), dp(4));
         heroBox.setVisibility(View.GONE);
+        heroKicker = Ui.text(this, 13, 0xFFFF5A5F, Ui.MEDIUM);
+        heroKicker.setLetterSpacing(0.18f);
+        heroKicker.setPadding(dp(3), 0, 0, dp(10));
+        heroKicker.setVisibility(View.GONE);
+        heroBox.addView(heroKicker);
         heroBox.addView(heroTitle);
         heroBox.addView(heroSub);
         column.addView(heroBox, new LinearLayout.LayoutParams(MATCH, dp(150)));
@@ -962,8 +968,14 @@ public final class Home extends Activity {
         Feeds.Race race = feeds.race;
         if (race != null && (Info.raceWeek(System.currentTimeMillis(), race.at) || Info.showsF1(it.id))) {
             heroText(race.name, sessions(race));
+            kicker(Info.raceLine(race.round, race.place));
+            if (race.map != null) {
+                circuitHero(race.map);
+                return;
+            }
         } else {
             heroText(Catalog.label(cfg, it), null);
+            kicker(null);
         }
         if (it.id.equals(heroId)) return;
         Bitmap cached = heroCache.get(it.id);
@@ -1000,6 +1012,36 @@ public final class Home extends Activity {
         heroSub.setVisibility(sub == null ? View.GONE : View.VISIBLE);
     }
 
+    private void kicker(String text) {
+        heroKicker.setText(text == null ? "" : text);
+        heroKicker.setVisibility(text == null || text.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /** The race card's art: the next circuit's track map, drawn once and kept. */
+    private void circuitHero(File map) {
+        String key = "circuit:" + map.getPath();
+        if (key.equals(heroId)) return;
+        Bitmap cached = heroCache.get(key);
+        if (cached != null) {
+            showHero(key, cached);
+            return;
+        }
+        float aspect = heroAspect();
+        colorIo.execute(() -> {
+            Bitmap b = Hero.circuit(map, aspect);
+            ui.post(() -> {
+                if (isDestroyed()) return;
+                if (b != null) heroCache.put(key, b);
+                // Show it only if the race card is still what the hero is showing.
+                Item f = focusedItem();
+                Feeds.Race r = feeds.race;
+                if (f == null || r == null || !map.equals(r.map) || heroSlides != null) return;
+                if (!Info.raceWeek(System.currentTimeMillis(), r.at) && !Info.showsF1(f.id)) return;
+                showHero(b == null ? null : key, b);
+            });
+        });
+    }
+
     /** The current slide of {@link #heroSlides}; the next one follows in 8 seconds. */
     private void showSlide() {
         ui.removeCallbacks(nextSlide);
@@ -1007,6 +1049,7 @@ public final class Home extends Activity {
         if (list == null || list.isEmpty()) return;
         int index = slideIndex % list.size();
         Feeds.Slide s = list.get(index);
+        kicker(null);
         heroText(s.title, "New on " + s.service + (s.series ? "  ·  Series" : "  ·  Film"));
         String key = "slide:" + s.image.getPath();
         Bitmap cached = slideCache.get(key);

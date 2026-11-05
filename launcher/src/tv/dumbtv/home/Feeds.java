@@ -64,14 +64,24 @@ final class Feeds {
     }
 
     static final class Race {
-        final String name;
+        final String name, round, place, wiki;
         final long at;
         final List<Session> sessions;
+        /** The circuit's track map from Wikimedia Commons, saved on the TV, or null. */
+        final File map;
 
-        Race(String name, long at, List<Session> sessions) {
+        Race(String name, String round, String place, String wiki, long at, List<Session> sessions, File map) {
             this.name = name;
+            this.round = round;
+            this.place = place;
+            this.wiki = wiki;
             this.at = at;
             this.sessions = sessions;
+            this.map = map;
+        }
+
+        Race withMap(File f) {
+            return new Race(name, round, place, wiki, at, sessions, f);
         }
     }
 
@@ -178,7 +188,26 @@ final class Feeds {
             r = parseRace(json(url, "f1-next.json", 0, null));
             if (r != null && r.at + Info.RACE_LENGTH < System.currentTimeMillis()) r = null;
         }
-        return r;
+        return r == null ? null : r.withMap(circuitMap(r.wiki));
+    }
+
+    /**
+     * The track map of the circuit whose Wikipedia article is {@code wiki}: the article's lead
+     * image, which for a circuit is its layout, fetched once at 960 px and kept.
+     */
+    private File circuitMap(String wiki) {
+        int at = wiki == null ? -1 : wiki.indexOf("/wiki/");
+        if (at < 0) return null;
+        String title = wiki.substring(at + 6);
+        File map = new File(dir, "circuit-" + slug(title) + ".png");
+        if (map.isFile()) return map;
+        JSONObject page = json("https://en.wikipedia.org/api/rest_v1/page/summary/" + title,
+                "wiki-" + slug(title) + ".json", 30 * Info.DAY, null);
+        JSONObject image = page == null ? null : page.optJSONObject("originalimage");
+        if (image == null && page != null) image = page.optJSONObject("thumbnail");
+        String src = image == null ? "" : image.optString("source", "");
+        if (src.isEmpty()) return null;
+        return download(Info.thumb(src, 960), map) ? map : null;
     }
 
     private static Race parseRace(JSONObject o) {
@@ -197,7 +226,12 @@ final class Feeds {
             }
             sessions.add(new Session("Race", at));
             Collections.sort(sessions, (a, b) -> Long.compare(a.at, b.at));
-            return new Race(r.getString("raceName"), at, Collections.unmodifiableList(sessions));
+            JSONObject circuit = r.optJSONObject("Circuit");
+            JSONObject where = circuit == null ? null : circuit.optJSONObject("Location");
+            String place = where == null ? "" : where.optString("locality", "") + ", " + where.optString("country", "");
+            return new Race(r.getString("raceName"), r.optString("round", ""), place,
+                    circuit == null ? null : circuit.optString("url", null), at,
+                    Collections.unmodifiableList(sessions), null);
         } catch (JSONException e) {
             return null;
         }
@@ -337,7 +371,8 @@ final class Feeds {
             c = (HttpURLConnection) new URL(url).openConnection();
             c.setConnectTimeout(10_000);
             c.setReadTimeout(15_000);
-            c.setRequestProperty("User-Agent", "dumbtv-home");
+            // Wikimedia asks API clients to name themselves; no personal contact is sent.
+            c.setRequestProperty("User-Agent", "dumbtv-home (https://github.com/humblemuzzu/dumbtv)");
             if (headers != null) {
                 for (Map.Entry<String, String> h : headers.entrySet()) c.setRequestProperty(h.getKey(), h.getValue());
             }
@@ -402,7 +437,8 @@ final class Feeds {
 
     private static boolean sameRace(Race a, Race b) {
         if (a == null || b == null) return a == b;
-        return a.name.equals(b.name) && a.at == b.at && a.sessions.size() == b.sessions.size();
+        return a.name.equals(b.name) && a.at == b.at && a.sessions.size() == b.sessions.size()
+                && (a.map == null ? b.map == null : a.map.equals(b.map));
     }
 
     private static boolean sameSlides(Map<String, List<Slide>> a, Map<String, List<Slide>> b) {
