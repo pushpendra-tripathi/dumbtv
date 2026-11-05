@@ -12,6 +12,10 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.TransitionDrawable;
 import android.media.tv.TvInputManager;
 import android.net.Uri;
 import android.os.Build;
@@ -23,6 +27,7 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.format.DateFormat;
 import android.text.style.RelativeSizeSpan;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -82,6 +87,12 @@ public final class Home extends Activity {
     private ValueAnimator colorAnimation;
     private int displayedColor, targetColor;
     private boolean tintWallpaper;
+    /** Cinema look: the focused app's art across the top, and its name. */
+    private ImageView hero;
+    private TextView heroTitle;
+    private Drawable heroShown;
+    private String heroId;
+    private final Map<String, Bitmap> heroCache = new HashMap<>();
 
     private final BroadcastReceiver packages = new BroadcastReceiver() {
         @Override
@@ -170,7 +181,8 @@ public final class Home extends Activity {
 
         void setVisible(boolean on) {
             boolean gridMode = "grid".equals(cfg.get(Config.LAYOUT));
-            title.setVisibility(on ? View.VISIBLE : View.GONE);
+            boolean quiet = cfg.cinema() && Catalog.APPS.equals(kind);
+            title.setVisibility(on && !quiet ? View.VISIBLE : View.GONE);
             scroll.setVisibility(on && !gridMode ? View.VISIBLE : View.GONE);
             grid.setVisibility(on && gridMode ? View.VISIBLE : View.GONE);
         }
@@ -273,6 +285,7 @@ public final class Home extends Activity {
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
         if (level < TRIM_MEMORY_UI_HIDDEN || level >= TRIM_MEMORY_COMPLETE) return;
+        heroCache.clear();
         try {
             Class<?> wmg = Class.forName("android.view.WindowManagerGlobal");
             Object global = wmg.getMethod("getInstance").invoke(null);
@@ -366,19 +379,24 @@ public final class Home extends Activity {
         List<int[]> rows = new ArrayList<>();
         for (Row row : new Row[] {apps, inputs}) {
             if (row.scroll.getVisibility() == View.VISIBLE) {
-                rows.add(new int[] {topIn(row.title, content), topIn(row.scroll, content) + row.scroll.getHeight()});
+                rows.add(new int[] {top(row, row.scroll, content), topIn(row.scroll, content) + row.scroll.getHeight()});
             } else if (row.grid.getVisibility() == View.VISIBLE) {
                 int gridTop = topIn(row.grid, content), lastTop = Integer.MIN_VALUE;
                 for (int i = 0; i < row.grid.getChildCount(); i++) {
                     View t = row.grid.getChildAt(i);
                     if (t.getTop() == lastTop) continue;
-                    int start = lastTop == Integer.MIN_VALUE ? topIn(row.title, content) : gridTop + t.getTop() - dp(12);
+                    int start = lastTop == Integer.MIN_VALUE ? top(row, row.grid, content) : gridTop + t.getTop() - dp(12);
                     lastTop = t.getTop();
                     rows.add(new int[] {start, gridTop + t.getBottom() + dp(8)});
                 }
             }
         }
         return rows;
+    }
+
+    /** Where a row starts: its title, or its tiles when the title is hidden. */
+    private static int top(Row row, View tiles, View content) {
+        return topIn(row.title.getVisibility() == View.VISIBLE ? row.title : tiles, content);
     }
 
     /** The earliest of the top or a row title that shows the whole of {@code at}. */
@@ -430,6 +448,11 @@ public final class Home extends Activity {
         root.addView(shade, new FrameLayout.LayoutParams(MATCH, MATCH));
         tint = new View(this);
         root.addView(tint, new FrameLayout.LayoutParams(MATCH, MATCH));
+        hero = new ImageView(this);
+        hero.setScaleType(ImageView.ScaleType.FIT_XY);
+        hero.setVisibility(View.GONE);
+        int heroH = Math.round(getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
+        root.addView(hero, new FrameLayout.LayoutParams(MATCH, heroH, Gravity.TOP));
 
         ScrollView scroll = new ScrollView(this) {
             /** Scrolls in whole rows: the focused row shows complete, and a row starts at the top edge. */
@@ -577,6 +600,12 @@ public final class Home extends Activity {
         head.addView(chip("Options", v -> startActivity(new Intent(this, Options.class))));
         head.addView(chip("Settings", v -> openSettings()));
         column.addView(head, new LinearLayout.LayoutParams(MATCH, WRAP));
+        heroTitle = Ui.text(this, 38, Ui.TEXT, Ui.LIGHT);
+        heroTitle.setGravity(Gravity.BOTTOM | Gravity.START);
+        heroTitle.setSingleLine();
+        heroTitle.setPadding(dp(56), 0, dp(56), dp(4));
+        heroTitle.setVisibility(View.GONE);
+        column.addView(heroTitle, new LinearLayout.LayoutParams(MATCH, dp(150)));
 
         apps = new Row(Catalog.APPS, "Apps", column);
         inputs = new Row(Catalog.INPUTS, "Inputs", column);
@@ -664,6 +693,17 @@ public final class Home extends Activity {
             Ui.focusStyle(c, accent, 0x14FFFFFF, dp(18));
             c.setVisibility(locked() ? View.GONE : View.VISIBLE);
         }
+        boolean cinema = cfg.cinema();
+        clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, cinema ? 24 : 52);
+        date.setVisibility(cinema ? View.GONE : View.VISIBLE);
+        heroTitle.setVisibility(cinema ? View.VISIBLE : View.GONE);
+        hero.setVisibility(cinema ? View.VISIBLE : View.GONE);
+        if (!cinema) {
+            hero.setImageDrawable(null);
+            heroShown = null;
+            heroId = null;
+            heroCache.clear();
+        }
         meter.setVisibility("on".equals(cfg.get(Config.MEMORY)) ? View.VISIBLE : View.GONE);
         meter.setAccent(accent);
         render(apps);
@@ -750,6 +790,7 @@ public final class Home extends Activity {
                         lastInputId = tile.item.id;
                     }
                     focusBackground(tile.item);
+                    hero(tile.item);
                 }
             });
             t.setOnLongClickListener(v -> {
@@ -819,7 +860,8 @@ public final class Home extends Activity {
         ViewGroup.LayoutParams params = apps.title.getLayoutParams();
         if (!(params instanceof LinearLayout.LayoutParams)) return;
         LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) params;
-        int targetMargin = (!"grid".equals(cfg.get(Config.LAYOUT)) && isInputsHidden()) ? appRowShift() : 0;
+        int targetMargin = (!cfg.cinema() && !"grid".equals(cfg.get(Config.LAYOUT)) && isInputsHidden())
+                ? appRowShift() : 0;
         if (lp.topMargin != targetMargin) {
             lp.topMargin = targetMargin;
             apps.title.setLayoutParams(lp);
@@ -834,7 +876,10 @@ public final class Home extends Activity {
             ui.post(() -> {
                 ViewGroup tiles = apps.tiles();
                 for (int i = 0; i < tiles.getChildCount(); i++) tiles.getChildAt(i).invalidate();
-                if (focusedItem() == it) focusBackground(it);
+                if (focusedItem() == it) {
+                    focusBackground(it);
+                    hero(it);
+                }
             });
         });
     }
@@ -842,6 +887,50 @@ public final class Home extends Activity {
     private Item focusedItem() {
         View focused = getCurrentFocus();
         return focused instanceof Tile ? ((Tile) focused).item : null;
+    }
+
+    /** Cinema look: shows {@code it}'s name and its art, blurred, across the top. */
+    private void hero(Item it) {
+        if (!cfg.cinema() || it == null) return;
+        CharSequence name = Catalog.label(cfg, it);
+        if (!name.toString().contentEquals(heroTitle.getText())) {
+            heroTitle.setText(name);
+            heroTitle.setAlpha(0f);
+            heroTitle.animate().alpha(1f).setDuration(220).start();
+        }
+        if (it.id.equals(heroId)) return;
+        Bitmap cached = heroCache.get(it.id);
+        if (cached != null) {
+            showHero(it.id, cached);
+            return;
+        }
+        Drawable art = it.banner != null ? it.banner : it.icon;
+        if (art == null) {
+            // No art yet: clear the band, but leave heroId unset so the art shows when it loads.
+            showHero(null, null);
+            return;
+        }
+        float aspect = getResources().getDisplayMetrics().widthPixels
+                / (getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
+        colorIo.execute(() -> {
+            Bitmap b = Hero.from(art, aspect);
+            ui.post(() -> {
+                if (isDestroyed()) return;
+                if (b != null) heroCache.put(it.id, b);
+                if (focusedItem() == it) showHero(b == null ? null : it.id, b);
+            });
+        });
+    }
+
+    private void showHero(String id, Bitmap b) {
+        heroId = id;
+        Drawable next = b == null ? new ColorDrawable(Color.TRANSPARENT) : new BitmapDrawable(getResources(), b);
+        Drawable from = heroShown == null ? new ColorDrawable(Color.TRANSPARENT) : heroShown;
+        TransitionDrawable fade = new TransitionDrawable(new Drawable[] {from, next});
+        fade.setCrossFadeEnabled(true);
+        hero.setImageDrawable(fade);
+        fade.startTransition(320);
+        heroShown = next;
     }
 
     private void focusBackground(Item it) {

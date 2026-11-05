@@ -6,5 +6,9 @@
         <item name="android:colorAccent">#FF3D8BFF</item>
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:windowContentOverlay">@null</item>
+        <!-- Only Cinema tiles have elevation. The platform defaults (about 0.19 and 0.04) leave
+             their shadow nearly invisible on a dark wallpaper. -->
+        <item name="android:spotShadowAlpha">0.6</item>
+        <item name="android:ambientShadowAlpha">0.25</item>
     </style>
 </resources>

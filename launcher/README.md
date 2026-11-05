@@ -60,6 +60,7 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 
 | Setting | Choices |
 |---|---|
+| Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden |
 | Accent | white, blue, cyan, green, amber, red, pink, violet |
 | Tiles | small, medium, large |
 | Layout | rows, or a grid that wraps to as many columns as fit |
@@ -131,6 +132,8 @@ Everything lives in one text file on the TV:
 ```
 
 ```ini
+# classic cinema
+style=classic
 # white blue cyan green amber red pink violet, or #RRGGBB
 accent=blue
 # small medium large

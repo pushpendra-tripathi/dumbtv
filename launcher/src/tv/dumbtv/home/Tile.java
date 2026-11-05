@@ -1,21 +1,33 @@
 package tv.dumbtv.home;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.DashPathEffect;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.media.tv.TvInputManager;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.View;
+import android.view.ViewOutlineProvider;
+import android.view.animation.DecelerateInterpolator;
 
-/** A card drawn in one pass: banner, or icon plus name, or an input name; focus ring on top. */
+/**
+ * A card drawn in one pass: banner, or icon plus name, or an input name; focus ring on top.
+ * In the Cinema look a focused card lifts instead: it grows, casts a shadow, catches a light
+ * gloss along its top and one sweep of light across it, and has no ring.
+ */
 final class Tile extends View {
     private static final float FOCUS_SCALE = 1.08f;
+    private static final float CINEMA_SCALE = 1.14f;
 
     final Item item;
     final String kind;
@@ -34,6 +46,16 @@ final class Tile extends View {
     private boolean moving;
     private final AfterglowTile afterglow;
 
+    private final boolean cinema;
+    private final float lift;
+    private final Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix sheenMatrix = new Matrix();
+    private float sheenBand;
+    /** Where the sweep of light is, 0 to 1; outside that range nothing is drawn. */
+    private float sheen = -1f;
+    private ValueAnimator sheenAnimation;
+
     Tile(Context c, Item item, String kind, CharSequence title, int cardW, int cardH,
             String labels, int accent) {
         super(c);
@@ -43,13 +65,16 @@ final class Tile extends View {
         this.cardW = cardW;
         this.cardH = cardH;
         boolean app = Catalog.APPS.equals(kind);
-        afterglow = app && "afterglow".equals(Config.get(c).get(Config.TILE_STYLE))
+        Config cfg = Config.get(c);
+        cinema = cfg.cinema();
+        afterglow = app && "afterglow".equals(cfg.get(Config.TILE_STYLE))
                 ? new AfterglowTile(c, item.id, title, accent) : null;
         labelH = app && afterglow == null ? Ui.dp(c, 26) : 0;
         labelAlways = "always".equals(labels);
         labelOnFocus = "focus".equals(labels);
-        radius = Ui.dp(c, 10);
+        radius = Ui.dp(c, cinema ? 14 : 10);
         stroke = Ui.dp(c, afterglow == null ? 2.5f : 1f);
+        lift = Ui.dp(c, 30);
 
         fill.setColor(app ? Ui.SURFACE : 0xFF17181B);
         ring.setStyle(Paint.Style.STROKE);
@@ -64,6 +89,17 @@ final class Tile extends View {
         under.setTypeface(Ui.MEDIUM);
         under.setTextAlign(Paint.Align.CENTER);
         under.setTextSize(Ui.dp(c, 13));
+
+        if (cinema) {
+            // The shadow follows the card only, not the name drawn under it.
+            setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    outline.setRoundRect(0, 0, Tile.this.cardW, Tile.this.cardH, radius);
+                }
+            });
+            setElevation(Ui.dp(c, 2));
+        }
 
         setFocusable(true);
         setClickable(true);
@@ -89,19 +125,64 @@ final class Tile extends View {
         if (afterglow != null) afterglow.resize(cardW, cardH);
         setPivotX(cardW / 2f);
         setPivotY(cardH / 2f);
+        if (cinema) {
+            gloss.setShader(new LinearGradient(0, 0, 0, cardH * 0.55f,
+                    0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+            sheenBand = cardW * 0.35f;
+            sheenPaint.setShader(new LinearGradient(0, 0, sheenBand, sheenBand * 0.5f,
+                    new int[] {0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF},
+                    new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        }
     }
 
     @Override
     protected void onFocusChanged(boolean focused, int direction, Rect previous) {
         super.onFocusChanged(focused, direction, previous);
         animate().cancel();
-        if (focused) {
+        if (cinema) {
+            float s = focused ? CINEMA_SCALE : 1f;
+            animate().scaleX(s).scaleY(s)
+                    .translationZ(focused ? lift : 0f)
+                    .translationY(focused ? -lift / 4 : 0f)
+                    .setInterpolator(new DecelerateInterpolator(1.6f))
+                    .setDuration(focused ? 200 : 160).start();
+            if (focused) sweep();
+            else stopSweep();
+        } else if (focused) {
             animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE).setDuration(110).start();
         } else {
             setScaleX(1f);
             setScaleY(1f);
         }
         invalidate();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        stopSweep();
+        super.onDetachedFromWindow();
+    }
+
+    /** One sweep of light across the card, a moment after it lifts. */
+    private void sweep() {
+        stopSweep();
+        sheenAnimation = ValueAnimator.ofFloat(0f, 1f);
+        sheenAnimation.setStartDelay(120);
+        sheenAnimation.setDuration(750);
+        sheenAnimation.setInterpolator(new DecelerateInterpolator());
+        sheenAnimation.addUpdateListener(a -> {
+            sheen = (Float) a.getAnimatedValue();
+            invalidate();
+        });
+        sheenAnimation.start();
+    }
+
+    private void stopSweep() {
+        if (sheenAnimation != null) {
+            sheenAnimation.cancel();
+            sheenAnimation = null;
+        }
+        sheen = -1f;
     }
 
     @Override
@@ -124,6 +205,15 @@ final class Tile extends View {
         } else if (!Catalog.APPS.equals(kind)) {
             drawLine(canvas, inner, cardW / 2f, cardH / 2f - (inner.ascent() + inner.descent()) / 2);
         }
+        if (cinema && isFocused() && !moving) {
+            canvas.drawRect(card, gloss);
+            if (sheen >= 0f && sheen <= 1f) {
+                float x = -sheenBand * 2 + sheen * (cardW + sheenBand * 3);
+                sheenMatrix.setTranslate(x, 0);
+                sheenPaint.getShader().setLocalMatrix(sheenMatrix);
+                canvas.drawRect(card, sheenPaint);
+            }
+        }
         if (moving) canvas.drawColor(0x99000000);
         canvas.restore();
 
@@ -133,7 +223,8 @@ final class Tile extends View {
             float r = Ui.dp(getContext(), 3.5f);
             canvas.drawCircle(cardW - r * 3, r * 3, r, dot);
         }
-        if (isFocused() || moving) {
+        // Cinema shows focus by lifting the card; the ring stays for moving a tile.
+        if (moving || isFocused() && !cinema) {
             float half = stroke / 2;
             ring.setPathEffect(moving ? new DashPathEffect(new float[] {stroke * 3, stroke * 2}, 0) : null);
             canvas.drawRoundRect(half, half, cardW - half, cardH - half, radius - half, radius - half, ring);
