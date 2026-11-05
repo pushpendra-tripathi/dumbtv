@@ -40,6 +40,8 @@ public final class InfoTest {
         check(Info.provides("Sony Liv", "com.onemainstream.sonyliv.android"), "SonyLIV spacing");
         check(Info.provides("Zee5", "com.zee5.amazon"), "ZEE5 case");
         check(!Info.provides("Netflix", "org.smarttube.stable"), "not a streaming service");
+        check(Info.provides("Discovery+", "com.discoveryplus.tv.fire"), "discovery+");
+        check(Info.service("com.amazon.firetv.youtube") == null, "YouTube: TMDB lists rentals only");
         check(Info.service("com.fancode.tv") == null, "no TMDB provider for FanCode");
 
         check(Arrays.asList(Config.CHOICES).containsAll(Arrays.asList(

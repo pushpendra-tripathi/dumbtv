@@ -66,7 +66,7 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 | Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden |
 | Weather | off (default), on: temperature and sky for `weather.city` under the clock |
 | F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; in race week the Cinema hero lists the weekend's sessions in the TV's time |
-| New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5), eight seconds each. Needs `tmdb.key` |
+| New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5, discovery+), eight seconds each. Needs `tmdb.key` |
 | Wi-Fi status | hidden (default), shown: a chip next to Options with signal bars, or Ethernet or Offline; it opens network settings |
 | Accent | white, blue, cyan, green, amber, red, pink, violet |
 | Tiles | small, medium, large |

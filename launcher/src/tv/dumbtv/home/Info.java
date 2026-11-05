@@ -76,6 +76,8 @@ final class Info {
                 return "SonyLIV";
             case "com.zee5.amazon":
                 return "ZEE5";
+            case "com.discoveryplus.tv.fire":
+                return "discovery+";
             default:
                 return null;
         }
