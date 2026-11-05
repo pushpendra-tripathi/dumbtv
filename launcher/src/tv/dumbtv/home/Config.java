@@ -112,7 +112,19 @@ final class Config {
      */
     static final Choice STYLE = new Choice("style", "Look", "classic",
             new String[] {"classic", "cinema"}, new String[] {"Classic", "Cinema"});
-    static final Choice[] CHOICES = {STYLE, ACCENT, TILES, LAYOUT, ORDER, LABELS, CLOCK, MEMORY, INPUTS, SWITCH, BACKGROUND, DIM, ROTATE, LOCK, TILE_STYLE};
+    /** Live feeds. Each one asks the network only while it is on; all are off by default. */
+    static final Choice WEATHER = new Choice("weather", "Weather", "off",
+            new String[] {"off", "on"}, new String[] {"Off", "On"});
+    static final Choice F1 = new Choice("f1", "F1 countdown", "off",
+            new String[] {"off", "on"}, new String[] {"Off", "On"});
+    static final Choice RELEASES = new Choice("releases", "New releases", "off",
+            new String[] {"off", "on"}, new String[] {"Off", "On"});
+    static final Choice WIFI = new Choice("wifi", "Wi-Fi status", "off",
+            new String[] {"off", "on"}, new String[] {"Hidden", "Shown"});
+    /** Free-text keys, set in home.conf: the weather city, and the owner's TMDB API key. */
+    static final String CITY = "weather.city";
+    static final String TMDB_KEY = "tmdb.key";
+    static final Choice[] CHOICES = {STYLE, WEATHER, F1, RELEASES, WIFI, ACCENT, TILES, LAYOUT, ORDER, LABELS, CLOCK, MEMORY, INPUTS, SWITCH, BACKGROUND, DIM, ROTATE, LOCK, TILE_STYLE};
 
     boolean cinema() {
         return "cinema".equals(get(STYLE));

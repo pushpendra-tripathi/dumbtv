@@ -26,6 +26,7 @@ final class Hero {
     private static final int BLUR_RADIUS = 3;
     private static final int BLUR_PASSES = 3;
     private static final int OUT_W = 384;
+    private static final int BACKDROP_W = 960;
 
     private Hero() {}
 
@@ -57,6 +58,50 @@ final class Hero {
                 }
                 out[rows ? line * w + i : i * w + line] = (a / n) << 24 | (red / n) << 16 | (g / n) << 8 | bl / n;
             }
+        }
+    }
+
+    /**
+     * A sharp backdrop for a new-release slide: {@code file} centre-cropped to the band, darkened
+     * on the left where the title sits, and faded out at the bottom like the blurred art.
+     */
+    static Bitmap backdrop(java.io.File file, float aspect) {
+        if (file == null || aspect <= 0) return null;
+        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeFile(file.getPath(), o);
+        if (o.outWidth <= 0 || o.outHeight <= 0) return null;
+        o.inSampleSize = 1;
+        while (o.outWidth / (o.inSampleSize * 2) >= BACKDROP_W) o.inSampleSize *= 2;
+        o.inJustDecodeBounds = false;
+        Bitmap src = android.graphics.BitmapFactory.decodeFile(file.getPath(), o);
+        if (src == null) return null;
+        try {
+            int outH = Math.max(1, Math.round(BACKDROP_W / aspect));
+            Bitmap out = Bitmap.createBitmap(BACKDROP_W, outH, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(out);
+            // Centre-crop, biased to the top: a backdrop's subject is rarely at its bottom edge.
+            float scale = Math.max(BACKDROP_W / (float) src.getWidth(), outH / (float) src.getHeight());
+            float dw = src.getWidth() * scale, dh = src.getHeight() * scale;
+            android.graphics.RectF dst = new android.graphics.RectF((BACKDROP_W - dw) / 2, (outH - dh) * 0.3f,
+                    (BACKDROP_W + dw) / 2, (outH - dh) * 0.3f + dh);
+            c.drawBitmap(src, null, dst, new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG));
+            Paint side = new Paint();
+            side.setShader(new LinearGradient(0, 0, BACKDROP_W * 0.65f, 0,
+                    0xB0000000, 0x00000000, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, BACKDROP_W, outH, side);
+            c.drawColor(0x26000000);
+            Paint mask = new Paint();
+            mask.setShader(new LinearGradient(0, 0, 0, outH,
+                    new int[] {0xFF000000, 0xFF000000, 0x00000000},
+                    new float[] {0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
+            mask.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+            c.drawRect(0, 0, BACKDROP_W, outH, mask);
+            return out;
+        } catch (RuntimeException e) {
+            return null;
+        } finally {
+            src.recycle();
         }
     }
 

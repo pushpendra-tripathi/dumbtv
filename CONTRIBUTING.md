@@ -61,8 +61,9 @@ The rules the code keeps, and that a change must keep too:
   touched.
 - Amazon packages are disabled, never uninstalled.
 - No app a person uses is removed unless they named it.
-- The launcher asks for no permissions on Fire OS 7 and 8 and has no internet
-  access. CI enforces this.
+- On Fire OS 7 and 8 the launcher asks only for the network, network-state and
+  Wi-Fi-state permissions its live feeds use, and opens no connection while every feed
+  is off. CI enforces the permission list.
 - Every step can be undone with `scripts/restore.sh`.
 
 Test on a real TV, say which one and which build in the pull request, and run the

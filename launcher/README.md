@@ -8,10 +8,13 @@ A home screen for Fire TV that does one job: show your apps and your HDMI inputs
 
 - **62 KB.** Plain Java and Android views. No AndroidX, Kotlin, Compose, Play
   Services or any other library.
-- **No network.** There is no `INTERNET` permission, so Android will not let it
-  open a connection.
-- **No permissions on Fire OS 7 and 8.** It declares three (usage access, task
-  order, boot completed), each limited to Android 8.1 and earlier, for the Fire OS 6
+- **No network unless you turn a live feed on.** Weather, F1 countdown and New
+  releases (see [Live feeds](#live-feeds)) are off by default; while all three are
+  off it opens no connection. Builds from this source hold the `INTERNET`,
+  network-state and Wi-Fi-state permissions they need; release 1.7 and earlier hold
+  none of them.
+- **Few permissions on Fire OS 7 and 8.** Those three, plus three (usage access,
+  task order, boot completed) limited to Android 8.1 and earlier, for the Fire OS 6
   Keeper below. Check: `aapt2 dump permissions dumbtv-home.apk`.
 - **No ads, no recommended rows, no account, no analytics, no update checks.**
 - About 60–70 MB of memory with the home screen showing, about 37 MB while an app
@@ -61,6 +64,10 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 | Setting | Choices |
 |---|---|
 | Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden |
+| Weather | off (default), on: temperature and sky for `weather.city` under the clock |
+| F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; in race week the Cinema hero lists the weekend's sessions in the TV's time |
+| New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5), eight seconds each. Needs `tmdb.key` |
+| Wi-Fi status | hidden (default), shown: a chip next to Options with signal bars, or Ethernet or Offline; it opens network settings |
 | Accent | white, blue, cyan, green, amber, red, pink, violet |
 | Tiles | small, medium, large |
 | Layout | rows, or a grid that wraps to as many columns as fit |
@@ -91,6 +98,32 @@ separate choices.
 | Grid layout | Adaptive background | Adaptive tint |
 |---|---|---|
 | ![Grid layout](../docs/assets/screens/grid.png) | ![Adaptive background](../docs/assets/screens/adaptive.png) | ![Adaptive tint](../docs/assets/screens/tint.png) |
+
+## Live feeds
+
+Each feed asks the network only while its switch in Options is on, from a background
+thread, and keeps its last answer on the TV so a failed request changes nothing on screen.
+
+| Feed | Source | Key | Refreshed |
+|---|---|---|---|
+| Weather | [Open-Meteo](https://open-meteo.com) | none | every 30 minutes |
+| F1 countdown | [Jolpica F1](https://github.com/jolpica/jolpica-f1) | none | every 6 hours, and right after a race |
+| New releases | [TMDB](https://www.themoviedb.org), region India | yours, in `tmdb.key` | every 6 hours |
+
+New releases are TMDB's list of films released in the last 120 days and series that
+premiered in the last 180 that stream on that service in India, most popular first, five
+per app. A title on two installed services shows under the first of them in your order.
+OK on a slide opens the app, not the title: TMDB does not know the apps' own title ids.
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+The key stays in `home.conf` on the TV. Set it over adb (on Fire OS 8, push to the media
+folder, see below):
+
+```sh
+adb pull /sdcard/Android/data/tv.dumbtv.home/files/home.conf
+echo 'tmdb.key=<your key>' >> home.conf
+adb push home.conf /sdcard/Android/media/tv.dumbtv.home/home.conf
+```
 
 ## HDMI inputs
 
@@ -134,6 +167,16 @@ Everything lives in one text file on the TV:
 ```ini
 # classic cinema
 style=classic
+# off on, each; nothing goes online while all three are off
+weather=off
+f1=off
+releases=off
+# hidden: off, shown: on
+wifi=off
+# any place name Open-Meteo knows
+weather.city=Pune
+# your TMDB API key (v3) or read token (v4), for New releases
+tmdb.key=
 # white blue cyan green amber red pink violet, or #RRGGBB
 accent=blue
 # small medium large

@@ -17,7 +17,11 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.TransitionDrawable;
 import android.media.tv.TvInputManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -46,6 +50,8 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -93,6 +99,25 @@ public final class Home extends Activity {
     private Drawable heroShown;
     private String heroId;
     private final Map<String, Bitmap> heroCache = new HashMap<>();
+    private LinearLayout heroBox;
+    private TextView heroSub;
+    /** Live feeds: weather and the next race under the clock, new releases in the hero. */
+    private Feeds feeds;
+    private final ExecutorService net = Executors.newSingleThreadExecutor();
+    private boolean feedsRunning;
+    private long feedsAt;
+    private TextView info;
+    private TextView wifiChip;
+    private WifiDrawable wifiIcon;
+    /** The new-release slides of the focused app, while the hero shows them. */
+    private List<Feeds.Slide> heroSlides;
+    private String slidesFor;
+    private int slideIndex;
+    private final Map<String, Bitmap> slideCache = new LinkedHashMap<>();
+    private final Runnable nextSlide = () -> {
+        slideIndex++;
+        showSlide();
+    };
 
     private final BroadcastReceiver packages = new BroadcastReceiver() {
         @Override
@@ -193,6 +218,7 @@ public final class Home extends Activity {
         super.onCreate(state);
         Future<List<Item>> catalog = io.submit(() -> Catalog.apps(this));
         cfg = Config.get(this);
+        feeds = new Feeds(cfg.dir);
         Future<Map<String, Long>> times = recentFor(Catalog.APPS) == null ? null
                 : io.submit(() -> Recent.times(this));
         tv = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
@@ -251,6 +277,8 @@ public final class Home extends Activity {
         f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         registerReceiver(time, f);
         tick();
+        refreshFeeds(false);
+        if (cfg.cinema()) hero(focusedItem());
     }
 
     @Override
@@ -265,6 +293,7 @@ public final class Home extends Activity {
         stopColorAnimation();
         targetColor = 0;
         unregisterReceiver(time);
+        stopSlides();
         if (moving != null) stopMoving();
     }
 
@@ -274,6 +303,8 @@ public final class Home extends Activity {
         if (tv != null) tv.unregisterCallback(inputWatch);
         io.shutdownNow();
         colorIo.shutdownNow();
+        net.shutdownNow();
+        ui.removeCallbacks(nextSlide);
         super.onDestroy();
     }
 
@@ -590,6 +621,10 @@ public final class Home extends Activity {
         date.setPadding(dp(2), dp(8), 0, 0);
         when.addView(clock);
         when.addView(date);
+        info = Ui.text(this, 15, Ui.MUTED, Ui.MEDIUM);
+        info.setPadding(dp(2), dp(8), 0, 0);
+        info.setVisibility(View.GONE);
+        when.addView(info);
         meter = new Meter(this);
         meter.setVisibility(View.GONE);
         LinearLayout.LayoutParams under = new LinearLayout.LayoutParams(WRAP, WRAP);
@@ -597,15 +632,30 @@ public final class Home extends Activity {
         under.leftMargin = dp(2);
         when.addView(meter, under);
         head.addView(when, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        wifiChip = chip("Wi-Fi", v -> openWifi());
+        wifiIcon = new WifiDrawable(dp(16), dp(13));
+        wifiIcon.setBounds(0, 0, dp(16), dp(13));
+        wifiChip.setCompoundDrawables(wifiIcon, null, null, null);
+        wifiChip.setCompoundDrawablePadding(dp(8));
+        head.addView(wifiChip);
         head.addView(chip("Options", v -> startActivity(new Intent(this, Options.class))));
         head.addView(chip("Settings", v -> openSettings()));
         column.addView(head, new LinearLayout.LayoutParams(MATCH, WRAP));
         heroTitle = Ui.text(this, 38, Ui.TEXT, Ui.LIGHT);
         heroTitle.setGravity(Gravity.BOTTOM | Gravity.START);
         heroTitle.setSingleLine();
-        heroTitle.setPadding(dp(56), 0, dp(56), dp(4));
-        heroTitle.setVisibility(View.GONE);
-        column.addView(heroTitle, new LinearLayout.LayoutParams(MATCH, dp(150)));
+        heroSub = Ui.text(this, 16, Ui.MUTED, Ui.MEDIUM);
+        heroSub.setSingleLine();
+        heroSub.setPadding(dp(2), dp(10), 0, 0);
+        heroSub.setVisibility(View.GONE);
+        heroBox = new LinearLayout(this);
+        heroBox.setOrientation(LinearLayout.VERTICAL);
+        heroBox.setGravity(Gravity.BOTTOM | Gravity.START);
+        heroBox.setPadding(dp(56), 0, dp(56), dp(4));
+        heroBox.setVisibility(View.GONE);
+        heroBox.addView(heroTitle);
+        heroBox.addView(heroSub);
+        column.addView(heroBox, new LinearLayout.LayoutParams(MATCH, dp(150)));
 
         apps = new Row(Catalog.APPS, "Apps", column);
         inputs = new Row(Catalog.INPUTS, "Inputs", column);
@@ -693,10 +743,13 @@ public final class Home extends Activity {
             Ui.focusStyle(c, accent, 0x14FFFFFF, dp(18));
             c.setVisibility(locked() ? View.GONE : View.VISIBLE);
         }
+        wifiChip.setVisibility(!locked() && on(Config.WIFI) ? View.VISIBLE : View.GONE);
+        wifiIcon.setColors(wifiChip.getTextColors());
         boolean cinema = cfg.cinema();
         clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, cinema ? 24 : 52);
         date.setVisibility(cinema ? View.GONE : View.VISIBLE);
-        heroTitle.setVisibility(cinema ? View.VISIBLE : View.GONE);
+        heroBox.setVisibility(cinema ? View.VISIBLE : View.GONE);
+        if (!cinema || !on(Config.RELEASES)) stopSlides();
         hero.setVisibility(cinema ? View.VISIBLE : View.GONE);
         if (!cinema) {
             hero.setImageDrawable(null);
@@ -710,6 +763,7 @@ public final class Home extends Activity {
         render(inputs);
         background();
         tick();
+        refreshFeeds(true);
     }
 
     /** Rebuilds the app list, keeping loaded art for every package except {@code changed}. */
@@ -892,11 +946,24 @@ public final class Home extends Activity {
     /** Cinema look: shows {@code it}'s name and its art, blurred, across the top. */
     private void hero(Item it) {
         if (!cfg.cinema() || it == null) return;
-        CharSequence name = Catalog.label(cfg, it);
-        if (!name.toString().contentEquals(heroTitle.getText())) {
-            heroTitle.setText(name);
-            heroTitle.setAlpha(0f);
-            heroTitle.animate().alpha(1f).setDuration(220).start();
+        // 1. New releases on this app, as a slideshow.
+        List<Feeds.Slide> mine = on(Config.RELEASES) ? feeds.slidesFor(it.id) : null;
+        if (mine != null && !mine.isEmpty()) {
+            if (!it.id.equals(slidesFor) || heroSlides != mine) {
+                slidesFor = it.id;
+                heroSlides = mine;
+                slideIndex = 0;
+                showSlide();
+            }
+            return;
+        }
+        stopSlides();
+        // 2. Race week: the weekend's sessions over the app's art. 3. Otherwise the app's name.
+        Feeds.Race race = feeds.race;
+        if (race != null && Info.raceWeek(System.currentTimeMillis(), race.at)) {
+            heroText(race.name, sessions(race));
+        } else {
+            heroText(Catalog.label(cfg, it), null);
         }
         if (it.id.equals(heroId)) return;
         Bitmap cached = heroCache.get(it.id);
@@ -918,6 +985,168 @@ public final class Home extends Activity {
                 if (isDestroyed()) return;
                 if (b != null) heroCache.put(it.id, b);
                 if (focusedItem() == it) showHero(b == null ? null : it.id, b);
+            });
+        });
+    }
+
+    private void heroText(CharSequence title, String sub) {
+        String t = title == null ? "" : title.toString();
+        if (!t.contentEquals(heroTitle.getText())) {
+            heroTitle.setText(t);
+            heroBox.setAlpha(0f);
+            heroBox.animate().alpha(1f).setDuration(220).start();
+        }
+        heroSub.setText(sub == null ? "" : sub);
+        heroSub.setVisibility(sub == null ? View.GONE : View.VISIBLE);
+    }
+
+    /** The current slide of {@link #heroSlides}; the next one follows in 8 seconds. */
+    private void showSlide() {
+        ui.removeCallbacks(nextSlide);
+        List<Feeds.Slide> list = heroSlides;
+        if (list == null || list.isEmpty()) return;
+        int index = slideIndex % list.size();
+        Feeds.Slide s = list.get(index);
+        heroText(s.title, "New on " + s.service + (s.series ? "  ·  Series" : "  ·  Film"));
+        String key = "slide:" + s.image.getPath();
+        Bitmap cached = slideCache.get(key);
+        if (cached != null) {
+            showHero(key, cached);
+        } else {
+            float aspect = heroAspect();
+            colorIo.execute(() -> {
+                Bitmap b = Hero.backdrop(s.image, aspect);
+                ui.post(() -> {
+                    if (b == null || isDestroyed()) return;
+                    slideCache.put(key, b);
+                    // Six backdrops are about 12 MB; older ones are decoded again when needed.
+                    Iterator<String> oldest = slideCache.keySet().iterator();
+                    while (slideCache.size() > 6 && oldest.hasNext()) {
+                        oldest.next();
+                        oldest.remove();
+                    }
+                    if (heroSlides == list && slideIndex % list.size() == index) showHero(key, b);
+                });
+            });
+        }
+        if (list.size() > 1) ui.postDelayed(nextSlide, 8000);
+    }
+
+    private void stopSlides() {
+        ui.removeCallbacks(nextSlide);
+        if (slidesFor == null) return;
+        slidesFor = null;
+        heroSlides = null;
+        heroId = null;
+    }
+
+    private float heroAspect() {
+        return getResources().getDisplayMetrics().widthPixels
+                / (getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
+    }
+
+    /** The next three sessions of the weekend in this TV's time: "Quali Sat 11:30 PM  ·  Race Sun 10:30 PM". */
+    private String sessions(Feeds.Race race) {
+        long now = System.currentTimeMillis();
+        if (now >= race.at) return "Race on now";
+        boolean h24 = DateFormat.is24HourFormat(this) || "24h".equals(cfg.get(Config.CLOCK));
+        if ("12h".equals(cfg.get(Config.CLOCK))) h24 = false;
+        StringBuilder out = new StringBuilder();
+        int shown = 0;
+        for (Feeds.Session s : race.sessions) {
+            if (s.at + Info.HOUR < now || shown == 3) continue;
+            if (out.length() > 0) out.append("  ·  ");
+            out.append(s.name).append(' ').append(DateFormat.format(h24 ? "EEE HH:mm" : "EEE h:mm a", new Date(s.at)));
+            shown++;
+        }
+        return out.toString();
+    }
+
+    private boolean on(Config.Choice c) {
+        return "on".equals(cfg.get(c));
+    }
+
+    /** Weather and the next race, under the clock. */
+    private void info() {
+        StringBuilder s = new StringBuilder();
+        String weather = feeds.weather;
+        if (weather != null) s.append(weather);
+        Feeds.Race race = feeds.race;
+        if (race != null) {
+            long now = System.currentTimeMillis();
+            if (s.length() > 0) s.append("     ");
+            s.append(race.name.replace("Grand Prix", "GP"))
+                    .append(now >= race.at ? "  ·  racing now" : " in " + Info.countdown(now, race.at));
+        }
+        info.setText(s);
+        info.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
+    }
+
+    /** Wi-Fi bars, or Ethernet, or Offline, on the chip next to Options. */
+    private void wifi() {
+        if (wifiChip.getVisibility() != View.VISIBLE) return;
+        WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        WifiInfo w = wm == null ? null : wm.getConnectionInfo();
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo n = cm == null ? null : cm.getActiveNetworkInfo();
+        // The DNS filter's VPN is the active network, so Wi-Fi is asked directly first.
+        if (w != null && w.getNetworkId() != -1) {
+            wifiChip.setText("Wi-Fi");
+            wifiIcon.setBars(Math.max(1, WifiManager.calculateSignalLevel(w.getRssi(), 5)));
+        } else if (n != null && n.isConnected()) {
+            wifiChip.setText(n.getType() == ConnectivityManager.TYPE_ETHERNET ? "Ethernet" : "Online");
+            wifiIcon.setBars(4);
+        } else {
+            wifiChip.setText("Offline");
+            wifiIcon.setBars(0);
+        }
+    }
+
+    private void openWifi() {
+        Intent i = new Intent(Settings.ACTION_WIFI_SETTINGS);
+        if (i.resolveActivity(getPackageManager()) != null) launch(i, null);
+        else openSettings();
+    }
+
+    /**
+     * Starts a background refresh of the feeds that are on, at most every 10 minutes unless
+     * {@code force} (a setting changed). With every feed off, nothing asks the network.
+     */
+    private void refreshFeeds(boolean force) {
+        boolean weather = on(Config.WEATHER), f1 = on(Config.F1), releases = on(Config.RELEASES);
+        if (!weather && !f1 && !releases) {
+            feeds.weather = null;
+            feeds.race = null;
+            feeds.slides = java.util.Collections.emptyMap();
+            info();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (feedsRunning) {
+            // A setting changed mid-fetch: let the next minute's tick fetch again.
+            if (force) feedsAt = 0;
+            return;
+        }
+        if (!force && now - feedsAt < 10 * Info.MINUTE) return;
+        feedsRunning = true;
+        feedsAt = now;
+        List<String> installed = new ArrayList<>();
+        for (Item it : apps.all) installed.add(it.id);
+        Feeds.Want want = new Feeds.Want(weather, cfg.get(Config.CITY, "Pune"), f1, releases,
+                cfg.get(Config.TMDB_KEY, "").trim(), installed);
+        net.execute(() -> {
+            boolean changed = feeds.refresh(want);
+            ui.post(() -> {
+                feedsRunning = false;
+                if (isDestroyed()) return;
+                // A setting changed while this ran (feedsAt was cleared): fetch for it now.
+                if (feedsAt == 0) refreshFeeds(true);
+                if (!changed) return;
+                info();
+                if (resumed && cfg.cinema()) {
+                    slidesFor = null;
+                    hero(focusedItem());
+                }
             });
         });
     }
@@ -1048,6 +1277,9 @@ public final class Home extends Activity {
         }
         // hourly and time-of-day rotations change while the screen stays open; a no-op otherwise
         background();
+        info();
+        wifi();
+        if (resumed) refreshFeeds(false);
     }
 
     private void background() {

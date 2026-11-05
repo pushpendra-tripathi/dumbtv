@@ -30,7 +30,9 @@ asked to have uninstalled come back from the Appstore.
 No. On your computer the scripts download the personalDNSfilter app from F-Droid,
 dumbtv home from this repository's releases (checked against a pinned SHA-256),
 and the HaGeZi tracker list; SmartTube too, if you ask for it. Nothing is
-uploaded. The launcher has no internet permission.
+uploaded. Release 1.7 of the launcher has no internet permission; builds from current
+source have one for the live feeds (weather, F1, new releases), which are off unless
+you turn them on.
 
 ## Your apps
 
@@ -106,8 +108,9 @@ the rest of the cleanup: the packages, the settings and the home screen.
 
 **Why its own launcher?**
 A home screen needs no internet access, no advertising ID and no permission to
-install apps. dumbtv home is 62 KB, open source and asks for no permissions on
-Fire OS 7 and 8. Check it yourself: `aapt2 dump permissions dumbtv-home.apk`
+install apps. dumbtv home is 62 KB and open source; release 1.7 asks for no
+permissions on Fire OS 7 and 8, and later builds only for the network ones its
+optional live feeds use. Check it yourself: `aapt2 dump permissions dumbtv-home.apk`
 lists three, each limited to Android 8.1 and earlier, which only Fire OS 6's Keeper
 uses.
 
