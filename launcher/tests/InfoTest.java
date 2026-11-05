@@ -30,6 +30,8 @@ public final class InfoTest {
         check(Info.raceWeek(race + 2 * h, race), "during the race");
         check(!Info.raceWeek(race + 4 * h, race), "after the race");
         check(!Info.raceWeek(race, 0), "no race");
+        check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
+        check(!Info.showsF1("com.netflix.ninja"), "other apps only in race week");
 
         check(Info.provides("Netflix", "com.netflix.ninja"), "Netflix");
         check(Info.provides("Amazon Prime Video", "com.amazon.firebat"), "Prime Video");

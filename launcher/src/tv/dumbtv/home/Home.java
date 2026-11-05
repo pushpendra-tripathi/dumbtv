@@ -960,7 +960,7 @@ public final class Home extends Activity {
         stopSlides();
         // 2. Race week: the weekend's sessions over the app's art. 3. Otherwise the app's name.
         Feeds.Race race = feeds.race;
-        if (race != null && Info.raceWeek(System.currentTimeMillis(), race.at)) {
+        if (race != null && (Info.raceWeek(System.currentTimeMillis(), race.at) || Info.showsF1(it.id))) {
             heroText(race.name, sessions(race));
         } else {
             heroText(Catalog.label(cfg, it), null);
@@ -1056,7 +1056,10 @@ public final class Home extends Activity {
         for (Feeds.Session s : race.sessions) {
             if (s.at + Info.HOUR < now || shown == 3) continue;
             if (out.length() > 0) out.append("  ·  ");
-            out.append(s.name).append(' ').append(DateFormat.format(h24 ? "EEE HH:mm" : "EEE h:mm a", new Date(s.at)));
+            // A weekday is only unambiguous within the coming week; further out, the date.
+            boolean soon = s.at - now < 6 * Info.DAY;
+            String day = soon ? "EEE" : "d MMM";
+            out.append(s.name).append(' ').append(DateFormat.format(day + (h24 ? " HH:mm" : " h:mm a"), new Date(s.at)));
             shown++;
         }
         return out.toString();

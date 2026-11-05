@@ -54,6 +54,11 @@ final class Info {
         return m + "m";
     }
 
+    /** The app whose tile shows the F1 schedule all season, not only in race week: FanCode. */
+    static boolean showsF1(String pkg) {
+        return "com.fancode.tv".equals(pkg);
+    }
+
     /** True while a race at {@code at} is close enough, or recent enough, to fill the hero. */
     static boolean raceWeek(long now, long at) {
         return at > 0 && now >= at - RACE_WEEK && now <= at + RACE_LENGTH;
