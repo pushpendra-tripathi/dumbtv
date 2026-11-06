@@ -317,7 +317,35 @@ public final class Home extends Activity {
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
         if (level < TRIM_MEMORY_UI_HIDDEN || level >= TRIM_MEMORY_COMPLETE) return;
+        release();
+    }
+
+    /**
+     * An app covers this screen. The Guard accessibility service keeps this process at
+     * bound-service importance, and Android then never sends TRIM_MEMORY_UI_HIDDEN, so the
+     * release runs from onStop too, which always comes.
+     */
+    @Override
+    protected void onStop() {
+        super.onStop();
+        release();
+    }
+
+    /**
+     * Drops every picture this screen holds (wallpaper about 8 MB, hero art, slides, circuit map)
+     * and the GPU caches behind them (about 30 MB on a Fire TV Stick 3rd gen). On a 1 GB stick a
+     * video app needs that memory: its video decoder driver has panicked the kernel when memory
+     * ran out mid-playback. onResume draws everything again: background() reloads a cleared
+     * wallpaper, hero() the art.
+     */
+    private void release() {
         heroCache.clear();
+        slideCache.clear();
+        hero.setImageDrawable(null);
+        heroShown = null;
+        heroId = null;
+        wall.setImageDrawable(null);
+        wallKey = null;
         try {
             Class<?> wmg = Class.forName("android.view.WindowManagerGlobal");
             Object global = wmg.getMethod("getInstance").invoke(null);
@@ -325,6 +353,9 @@ public final class Home extends Activity {
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // not reachable on this build: the context simply stays
         }
+        // The bitmaps' pixels are native memory, freed only when their Java objects are
+        // collected; ask for that now rather than when the video app is already short.
+        System.gc();
     }
 
     @Override
