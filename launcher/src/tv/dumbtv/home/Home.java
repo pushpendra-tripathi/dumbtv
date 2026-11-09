@@ -118,6 +118,9 @@ public final class Home extends Activity {
     private String lastStyle;
     /** Ambient mode: the controls are faded out and every app's new releases play full screen. */
     private boolean ambient, swallowKeyUp;
+    /** Ambient mode's caption: the slide's service and title, so OK can open it. */
+    private LinearLayout ambientCaption;
+    private TextView ambientKicker, ambientTitle;
     private final Runnable goAmbient = this::enterAmbient;
     /** Live feeds: weather and the next race under the clock, new releases in the hero. */
     private Feeds feeds;
@@ -394,8 +397,15 @@ public final class Home extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         if (ambient && e.getAction() == KeyEvent.ACTION_DOWN) {
-            leaveAmbient(true);
             swallowKeyUp = true;
+            int code = e.getKeyCode();
+            boolean select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                    || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+            Feeds.Slide shown = select ? currentSlide() : null;
+            Item app = shown == null ? null : findApp(shown.pkg);
+            leaveAmbient(app == null);
+            // OK on a slide opens its app (not the title itself: no app ids are known for it).
+            if (app != null) launch(appIntent(app), app.id);
             return true;
         }
         if (swallowKeyUp && e.getAction() == KeyEvent.ACTION_UP) {
@@ -554,6 +564,23 @@ public final class Home extends Activity {
                 0x99000000, 0x00000000, 0x00000000, 0xE60B0B0E, NEAR_BLACK}));
         scrim.setVisibility(View.GONE);
         root.addView(scrim, new FrameLayout.LayoutParams(MATCH, MATCH));
+        ambientCaption = new LinearLayout(this);
+        ambientCaption.setOrientation(LinearLayout.VERTICAL);
+        ambientCaption.setPadding(dp(56), 0, dp(56), dp(48));
+        ambientCaption.setAlpha(0f);
+        ambientCaption.setVisibility(View.GONE);
+        ambientKicker = Ui.text(this, 12, 0xCCFFFFFF, Ui.MEDIUM);
+        ambientKicker.setLetterSpacing(0.18f);
+        ambientKicker.setShadowLayer(dp(6), 0, 0, 0x99000000);
+        ambientKicker.setPadding(dp(2), 0, 0, dp(8));
+        ambientTitle = Ui.text(this, 26, Ui.TEXT, Ui.LIGHT);
+        ambientTitle.setShadowLayer(dp(10), 0, 0, 0xB3000000);
+        ambientTitle.setSingleLine();
+        ambientTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        ambientCaption.addView(ambientKicker);
+        ambientCaption.addView(ambientTitle);
+        FrameLayout.LayoutParams cap = new FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM | Gravity.START);
+        root.addView(ambientCaption, cap);
 
         ScrollView scroll = new ScrollView(this) {
             /** Scrolls in whole rows: the focused row shows complete, and a row starts at the top edge. */
@@ -1176,6 +1203,13 @@ public final class Home extends Activity {
             heroText(s.title, "New on " + s.service + (s.series ? "  ·  Series" : "  ·  Film"));
         }
         boolean full = ambient;
+        if (ambient) {
+            ambientKicker.setText(("New on " + s.service + "  ·  " + (s.series ? "Series" : "Film")).toUpperCase(Locale.ROOT)
+                    + "   ·   OK TO OPEN");
+            ambientTitle.setText(s.title);
+            ambientCaption.setAlpha(0f);
+            ambientCaption.animate().alpha(1f).setStartDelay(300).setDuration(500).start();
+        }
         String key = (full ? "slide:full:" : "slide:") + s.image.getPath();
         Bitmap cached = slideCache.get(key);
         if (cached != null) {
@@ -1464,6 +1498,8 @@ public final class Home extends Activity {
         heroKicker.setTypeface(on ? Ui.label(this) : Ui.MEDIUM);
         heroSub.setTypeface(on ? Ui.label(this) : Ui.MEDIUM);
         statusTemp.setTypeface(Ui.label(this));
+        ambientTitle.setTypeface(on ? Ui.display(this) : Ui.LIGHT);
+        ambientKicker.setTypeface(on ? Ui.label(this) : Ui.MEDIUM);
         statusClock.setTypeface(Ui.label(this));
         if (!on) {
             leaveAmbient(false);
@@ -1513,6 +1549,18 @@ public final class Home extends Activity {
         }
     }
 
+    /** The slide on screen, or null. */
+    private Feeds.Slide currentSlide() {
+        List<Feeds.Slide> list = heroSlides;
+        return list == null || list.isEmpty() ? null : list.get(slideIndex % list.size());
+    }
+
+    /** The installed app with this package, or null. */
+    private Item findApp(String pkg) {
+        for (Item it : apps.all) if (it.id.equals(pkg)) return it;
+        return null;
+    }
+
     private void scheduleAmbient() {
         ui.removeCallbacks(goAmbient);
         if (resumed && cfg.cinema2() && on(Config.AMBIENT)) ui.postDelayed(goAmbient, AMBIENT_MS);
@@ -1526,6 +1574,7 @@ public final class Home extends Activity {
             all.addAll(feeds.slidesFor(it.id));
         }
         ambient = true;
+        ambientCaption.setVisibility(View.VISIBLE);
         page.animate().alpha(0f).setDuration(700).start();
         scrim.animate().alpha(0.45f).setDuration(700).start();
         if (!all.isEmpty()) {
@@ -1542,6 +1591,9 @@ public final class Home extends Activity {
         ambient = false;
         page.animate().cancel();
         scrim.animate().cancel();
+        ambientCaption.animate().cancel();
+        ambientCaption.setAlpha(0f);
+        ambientCaption.setVisibility(View.GONE);
         if (animate) {
             page.animate().alpha(1f).setDuration(250).start();
             scrim.animate().alpha(1f).setDuration(250).start();
