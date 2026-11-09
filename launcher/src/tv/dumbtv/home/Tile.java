@@ -91,6 +91,15 @@ final class Tile extends View {
         under.setTextSize(Ui.dp(c, 13));
 
         if (cinema) {
+            // Built here, not in onSizeChanged: a card's size is fixed at construction, and a
+            // focused tile can be drawn (and its sweep started) before its first layout, which
+            // crashed the launcher with a null shader.
+            gloss.setShader(new LinearGradient(0, 0, 0, cardH * 0.55f,
+                    0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+            sheenBand = cardW * 0.35f;
+            sheenPaint.setShader(new LinearGradient(0, 0, sheenBand, sheenBand * 0.5f,
+                    new int[] {0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF},
+                    new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
             // The shadow follows the card only, not the name drawn under it.
             setOutlineProvider(new ViewOutlineProvider() {
                 @Override
@@ -125,14 +134,6 @@ final class Tile extends View {
         if (afterglow != null) afterglow.resize(cardW, cardH);
         setPivotX(cardW / 2f);
         setPivotY(cardH / 2f);
-        if (cinema) {
-            gloss.setShader(new LinearGradient(0, 0, 0, cardH * 0.55f,
-                    0x26FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
-            sheenBand = cardW * 0.35f;
-            sheenPaint.setShader(new LinearGradient(0, 0, sheenBand, sheenBand * 0.5f,
-                    new int[] {0x00FFFFFF, 0x38FFFFFF, 0x00FFFFFF},
-                    new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
-        }
     }
 
     @Override
