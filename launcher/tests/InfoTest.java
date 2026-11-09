@@ -25,9 +25,16 @@ public final class InfoTest {
         check("now".equals(Info.countdown(10, 10)), "at the start");
 
         check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
-        check("https://u/thumb/c/cf/x.svg/960px-x.svg.png?a=1".equals(
-                Info.thumb("https://u/thumb/c/cf/x.svg/1920px-x.svg.png?a=1", 960)), "thumbnail resized");
-        check("https://u/x.png".equals(Info.thumb("https://u/x.png", 960)), "a plain URL is left alone");
+        // Interlagos as Jolpica places it, against two track centres from f1-circuits.
+        double[] lats = {36.1147, -23.7019, Double.NaN}, lons = {-115.1706, -46.6985, 0};
+        check(Info.nearest(-23.7036, -46.6997, lats, lons, 20) == 1, "nearest track is Interlagos");
+        check(Info.nearest(51.5, -0.12, lats, lons, 20) == -1, "nothing within 20 km");
+        check(Math.abs(Info.km(0, 0, 0, 1) - 111.19) < 0.1, "one degree of longitude at the equator");
+        // A square track, 0.01 degrees a side, fitted into a wide box: square, centred, north up.
+        float[] f = Info.fit(new double[] {0, 0.01, 0.01, 0}, new double[] {0.01, 0.01, 0, 0}, 0, 0, 200, 100);
+        check(Math.abs((f[2] - f[0]) - (f[5] - f[3])) < 0.5f, "proportions kept");
+        check(Math.abs(f[0] - 50) < 0.5f && Math.abs(f[1]) < 0.5f, "centred, north edge at the top");
+        check(Math.abs(f[5] - 100) < 0.5f, "fills the box height");
         check("ROUND 20  ·  SÃO PAULO, BRAZIL".equals(Info.raceLine("20", "São Paulo, Brazil")), "race line");
         check("ROUND 20".equals(Info.raceLine("20", ", ")), "no place");
         check(!Info.showsF1("com.netflix.ninja"), "no other app shows the race card");

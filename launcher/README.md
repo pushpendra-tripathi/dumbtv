@@ -65,7 +65,7 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 |---|---|
 | Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden |
 | Weather | off (default), on: temperature and sky for `weather.city` under the clock |
-| F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; on the FanCode tile the Cinema hero shows the next race: its circuit map, round, place and the upcoming sessions in the TV's time |
+| F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; on the FanCode tile the Cinema hero shows the next race: its track outline, round, place and the upcoming sessions in the TV's time |
 | New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5, discovery+), eight seconds each. Needs `tmdb.key` |
 | Wi-Fi status | hidden (default), shown: a chip next to Options with signal bars, or Ethernet or Offline; it opens network settings |
 | Accent | white, blue, cyan, green, amber, red, pink, violet |
@@ -116,8 +116,9 @@ per app. A title on two installed services shows under the first of them in your
 OK on a slide opens the app, not the title: TMDB does not know the apps' own title ids.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-The F1 race card shows the next circuit's track map: the lead image of its Wikipedia article,
-from Wikimedia Commons under that file's own licence, fetched once per circuit.
+The F1 race card draws the next circuit's outline from
+[f1-circuits](https://github.com/bacinger/f1-circuits) (MIT), matched to the race by
+location and fetched at most monthly.
 
 The key stays in `home.conf` on the TV. Set it over adb (on Fire OS 8, push to the media
 folder, see below):

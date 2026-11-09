@@ -106,94 +106,46 @@ final class Hero {
     }
 
     /**
-     * The F1 race card's art: a circuit's track map, redrawn as white lines with a soft red glow
-     * and placed on the right of the band, the rest transparent so the wallpaper shows. Works
-     * for maps on a transparent background (the line is the alpha) and on a plain one (the line
-     * is whatever differs from the corner colour).
+     * The F1 race card's art: the track outline as a white line with a red glow and a dot at the
+     * first point (the start line in f1-circuits), on the right of the band; the rest transparent
+     * so the wallpaper shows.
      */
-    static Bitmap circuit(java.io.File file, float aspect) {
-        if (file == null || aspect <= 0) return null;
-        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
-        o.inJustDecodeBounds = true;
-        android.graphics.BitmapFactory.decodeFile(file.getPath(), o);
-        if (o.outWidth <= 0 || o.outHeight <= 0) return null;
-        o.inSampleSize = 1;
-        while (o.outWidth / (o.inSampleSize * 2) >= 640) o.inSampleSize *= 2;
-        o.inJustDecodeBounds = false;
-        Bitmap src = android.graphics.BitmapFactory.decodeFile(file.getPath(), o);
-        if (src == null) return null;
-        Bitmap lines = null, glow = null;
+    static Bitmap track(double[] lon, double[] lat, float aspect) {
+        if (lon == null || lat == null || lon.length < 3 || aspect <= 0) return null;
         try {
-            int sw = src.getWidth(), sh = src.getHeight();
-            int[] px = new int[sw * sh];
-            src.getPixels(px, 0, sw, 0, 0, sw, sh);
-            int clear = 0;
-            for (int c : px) if (c >>> 24 < 16) clear++;
-            boolean transparent = clear > px.length / 4;
-            float bg = lum(px[0]);
-            int[] ink = new int[px.length];
-            for (int i = 0; i < px.length; i++) {
-                float a = (px[i] >>> 24) / 255f;
-                float v = transparent ? a : Math.min(1f, Math.abs(lum(px[i]) - bg) * 1.8f) * a;
-                ink[i] = Math.round(v * 255);
-            }
-            // Opening (erode twice, then dilate twice: 5x5): drops strokes up to about four pixels
-            // wide, which on a circuit map are its labels, legend and scale bar, and keeps the
-            // track line, drawn thicker than that at this size.
-            ink = spread(spread(ink, sw, sh, false), sw, sh, false);
-            ink = spread(spread(ink, sw, sh, true), sw, sh, true);
-            for (int i = 0; i < px.length; i++) px[i] = ink[i] << 24 | 0x00FFFFFF;
-            lines = Bitmap.createBitmap(px, sw, sh, Bitmap.Config.ARGB_8888);
-            glow = Bitmap.createScaledBitmap(lines, Math.max(1, sw / 6), Math.max(1, sh / 6), true);
-            blur(glow, 2, 3);
-
             int outH = Math.max(1, Math.round(BACKDROP_W / aspect));
             Bitmap out = Bitmap.createBitmap(BACKDROP_W, outH, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
-            // Fit the map into the right of the band, below the chips and clear of the title.
-            float boxL = BACKDROP_W * 0.56f, boxR = BACKDROP_W * 0.95f, boxT = outH * 0.27f, boxB = outH * 0.78f;
-            float scale = Math.min((boxR - boxL) / sw, (boxB - boxT) / sh);
-            float dw = sw * scale, dh = sh * scale;
-            float left = boxL + ((boxR - boxL) - dw) / 2, top = boxT + ((boxB - boxT) - dh) / 2;
-            android.graphics.RectF dst = new android.graphics.RectF(left, top, left + dw, top + dh);
-            Paint red = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
-            red.setColorFilter(new android.graphics.PorterDuffColorFilter(0xFFE8202A, PorterDuff.Mode.SRC_IN));
-            red.setAlpha(200);
-            c.drawBitmap(glow, null, dst, red);
-            Paint white = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
-            white.setAlpha(235);
-            c.drawBitmap(lines, null, dst, white);
+            // Right of the band, below the chips and clear of the title and the first tile row.
+            float boxL = BACKDROP_W * 0.58f, boxR = BACKDROP_W * 0.94f, boxT = outH * 0.28f, boxB = outH * 0.78f;
+            float[] pts = Info.fit(lon, lat, boxL, boxT, boxR - boxL, boxB - boxT);
+            android.graphics.Path path = new android.graphics.Path();
+            path.moveTo(pts[0], pts[1]);
+            for (int i = 2; i < pts.length; i += 2) path.lineTo(pts[i], pts[i + 1]);
+            path.close();
+            float unit = BACKDROP_W / 960f;
+            Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+            glow.setStyle(Paint.Style.STROKE);
+            glow.setStrokeJoin(Paint.Join.ROUND);
+            glow.setStrokeCap(Paint.Cap.ROUND);
+            glow.setStrokeWidth(10 * unit);
+            glow.setColor(0xCCE8202A);
+            glow.setMaskFilter(new android.graphics.BlurMaskFilter(9 * unit, android.graphics.BlurMaskFilter.Blur.NORMAL));
+            c.drawPath(path, glow);
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeJoin(Paint.Join.ROUND);
+            line.setStrokeCap(Paint.Cap.ROUND);
+            line.setStrokeWidth(3.2f * unit);
+            line.setColor(0xF2FFFFFF);
+            c.drawPath(path, line);
+            Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
+            dot.setColor(0xFFFFFFFF);
+            c.drawCircle(pts[0], pts[1], 4.5f * unit, dot);
             return out;
         } catch (RuntimeException e) {
             return null;
-        } finally {
-            src.recycle();
-            if (lines != null) lines.recycle();
-            if (glow != null) glow.recycle();
         }
-    }
-
-    /** One 3x3 pass over an alpha mask: the maximum ({@code grow}) or minimum of each neighbourhood. */
-    static int[] spread(int[] in, int w, int h, boolean grow) {
-        int[] out = new int[in.length];
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int best = grow ? 0 : 255;
-                for (int dy = -1; dy <= 1; dy++) {
-                    int yy = Math.max(0, Math.min(h - 1, y + dy));
-                    for (int dx = -1; dx <= 1; dx++) {
-                        int v = in[yy * w + Math.max(0, Math.min(w - 1, x + dx))];
-                        best = grow ? Math.max(best, v) : Math.min(best, v);
-                    }
-                }
-                out[y * w + x] = best;
-            }
-        }
-        return out;
-    }
-
-    private static float lum(int c) {
-        return (0.299f * ((c >> 16) & 0xFF) + 0.587f * ((c >> 8) & 0xFF) + 0.114f * (c & 0xFF)) / 255f;
     }
 
     /** A blurred, faded bitmap of {@code art} for a band of {@code aspect} (width / height). */

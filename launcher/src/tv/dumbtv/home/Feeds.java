@@ -64,24 +64,32 @@ final class Feeds {
     }
 
     static final class Race {
-        final String name, round, place, wiki;
+        final String name, round, place;
+        /** The circuit's position, from Jolpica; used to find its track. */
+        final double lat, lon;
         final long at;
         final List<Session> sessions;
-        /** The circuit's track map from Wikimedia Commons, saved on the TV, or null. */
-        final File map;
+        /** The track's outline from f1-circuits, as longitude and latitude per point, or null. */
+        final double[] trackLon, trackLat;
+        /** The f1-circuits id of that track, such as "us-2023", or null. */
+        final String trackId;
 
-        Race(String name, String round, String place, String wiki, long at, List<Session> sessions, File map) {
+        Race(String name, String round, String place, double lat, double lon, long at, List<Session> sessions,
+                String trackId, double[] trackLon, double[] trackLat) {
             this.name = name;
             this.round = round;
             this.place = place;
-            this.wiki = wiki;
+            this.lat = lat;
+            this.lon = lon;
             this.at = at;
             this.sessions = sessions;
-            this.map = map;
+            this.trackId = trackId;
+            this.trackLon = trackLon;
+            this.trackLat = trackLat;
         }
 
-        Race withMap(File f) {
-            return new Race(name, round, place, wiki, at, sessions, f);
+        Race withTrack(String id, double[] lon, double[] lat) {
+            return new Race(name, round, place, this.lat, this.lon, at, sessions, id, lon, lat);
         }
     }
 
@@ -188,26 +196,58 @@ final class Feeds {
             r = parseRace(json(url, "f1-next.json", 0, null));
             if (r != null && r.at + Info.RACE_LENGTH < System.currentTimeMillis()) r = null;
         }
-        return r == null ? null : r.withMap(circuitMap(r.wiki));
+        return r == null ? null : track(r);
     }
 
     /**
-     * The track map of the circuit whose Wikipedia article is {@code wiki}: the article's lead
-     * image, which for a circuit is its layout, fetched once at 960 px and kept.
+     * {@code r} with its track outline: the f1-circuits track (MIT, github.com/bacinger/f1-circuits)
+     * whose centre lies nearest the circuit Jolpica names, within 20 km. The file covers every
+     * circuit and is fetched at most monthly.
      */
-    private File circuitMap(String wiki) {
-        int at = wiki == null ? -1 : wiki.indexOf("/wiki/");
-        if (at < 0) return null;
-        String title = wiki.substring(at + 6);
-        File map = new File(dir, "circuit-" + slug(title) + ".png");
-        if (map.isFile()) return map;
-        JSONObject page = json("https://en.wikipedia.org/api/rest_v1/page/summary/" + title,
-                "wiki-" + slug(title) + ".json", 30 * Info.DAY, null);
-        JSONObject image = page == null ? null : page.optJSONObject("originalimage");
-        if (image == null && page != null) image = page.optJSONObject("thumbnail");
-        String src = image == null ? "" : image.optString("source", "");
-        if (src.isEmpty()) return null;
-        return download(Info.thumb(src, 960), map) ? map : null;
+    private Race track(Race r) {
+        dropLegacyMaps();
+        JSONObject all = json("https://raw.githubusercontent.com/bacinger/f1-circuits/master/f1-circuits.geojson",
+                "f1-circuits.geojson", 30 * Info.DAY, null);
+        JSONArray features = all == null ? null : all.optJSONArray("features");
+        if (features == null || Double.isNaN(r.lat)) return r;
+        int n = features.length();
+        double[] cLat = new double[n], cLon = new double[n];
+        JSONArray[] paths = new JSONArray[n];
+        for (int i = 0; i < n; i++) {
+            JSONObject f = features.optJSONObject(i);
+            JSONObject g = f == null ? null : f.optJSONObject("geometry");
+            paths[i] = g == null ? null : g.optJSONArray("coordinates");
+            cLat[i] = cLon[i] = Double.NaN;
+            if (paths[i] == null || paths[i].length() == 0) continue;
+            double sLat = 0, sLon = 0;
+            for (int k = 0; k < paths[i].length(); k++) {
+                JSONArray pt = paths[i].optJSONArray(k);
+                sLon += pt.optDouble(0);
+                sLat += pt.optDouble(1);
+            }
+            cLat[i] = sLat / paths[i].length();
+            cLon[i] = sLon / paths[i].length();
+        }
+        int best = Info.nearest(r.lat, r.lon, cLat, cLon, 20);
+        if (best < 0) return r;
+        JSONArray path = paths[best];
+        double[] lon = new double[path.length()], lat = new double[path.length()];
+        for (int k = 0; k < path.length(); k++) {
+            lon[k] = path.optJSONArray(k).optDouble(0);
+            lat[k] = path.optJSONArray(k).optDouble(1);
+        }
+        JSONObject props = features.optJSONObject(best).optJSONObject("properties");
+        return r.withTrack(props == null ? String.valueOf(best) : props.optString("id", String.valueOf(best)), lon, lat);
+    }
+
+    /** Wikipedia track maps from an earlier build: replaced by the outline, so not kept. */
+    private void dropLegacyMaps() {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            String n = f.getName();
+            if (n.startsWith("circuit-") || n.startsWith("wiki-")) f.delete();
+        }
     }
 
     private static Race parseRace(JSONObject o) {
@@ -229,9 +269,10 @@ final class Feeds {
             JSONObject circuit = r.optJSONObject("Circuit");
             JSONObject where = circuit == null ? null : circuit.optJSONObject("Location");
             String place = where == null ? "" : where.optString("locality", "") + ", " + where.optString("country", "");
-            return new Race(r.getString("raceName"), r.optString("round", ""), place,
-                    circuit == null ? null : circuit.optString("url", null), at,
-                    Collections.unmodifiableList(sessions), null);
+            double lat = where == null ? Double.NaN : where.optDouble("lat", Double.NaN);
+            double lon = where == null ? Double.NaN : where.optDouble("long", Double.NaN);
+            return new Race(r.getString("raceName"), r.optString("round", ""), place, lat, lon, at,
+                    Collections.unmodifiableList(sessions), null, null, null);
         } catch (JSONException e) {
             return null;
         }
@@ -438,7 +479,7 @@ final class Feeds {
     private static boolean sameRace(Race a, Race b) {
         if (a == null || b == null) return a == b;
         return a.name.equals(b.name) && a.at == b.at && a.sessions.size() == b.sessions.size()
-                && (a.map == null ? b.map == null : a.map.equals(b.map));
+                && (a.trackId == null ? b.trackId == null : a.trackId.equals(b.trackId));
     }
 
     private static boolean sameSlides(Map<String, List<Slide>> a, Map<String, List<Slide>> b) {

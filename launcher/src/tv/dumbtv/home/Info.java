@@ -52,11 +52,6 @@ final class Info {
         return m + "m";
     }
 
-    /** A Wikimedia thumbnail URL resized to {@code width} px; any other URL unchanged. */
-    static String thumb(String url, int width) {
-        return url == null ? null : url.replaceFirst("/\\d+px-", "/" + width + "px-");
-    }
-
     /** "ROUND 20  ·  SÃO PAULO, BRAZIL", or just the part that is known. */
     static String raceLine(String round, String place) {
         StringBuilder s = new StringBuilder();
@@ -66,6 +61,59 @@ final class Info {
             s.append(place.trim());
         }
         return s.toString().toUpperCase(Locale.ROOT);
+    }
+
+    /** Great-circle distance in kilometres. */
+    static double km(double lat1, double lon1, double lat2, double lon2) {
+        double p1 = Math.toRadians(lat1), p2 = Math.toRadians(lat2);
+        double dp = p2 - p1, dl = Math.toRadians(lon2 - lon1);
+        double h = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 6371 * 2 * Math.asin(Math.sqrt(h));
+    }
+
+    /** The index of the point nearest ({@code lat}, {@code lon}) within {@code maxKm}, or -1. NaN points are skipped. */
+    static int nearest(double lat, double lon, double[] lats, double[] lons, double maxKm) {
+        int best = -1;
+        double bestKm = maxKm;
+        for (int i = 0; i < lats.length; i++) {
+            if (Double.isNaN(lats[i]) || Double.isNaN(lons[i])) continue;
+            double d = km(lat, lon, lats[i], lons[i]);
+            if (d <= bestKm) {
+                bestKm = d;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * A track outline in screen coordinates (x0, y0, x1, y1, ...): longitude scaled by the cosine
+     * of the mean latitude so the shape is not stretched, north up, fitted inside the box with its
+     * proportions kept, and centred in it.
+     */
+    static float[] fit(double[] lon, double[] lat, float left, float top, float width, float height) {
+        int n = Math.min(lon.length, lat.length);
+        float[] out = new float[n * 2];
+        if (n == 0) return out;
+        double meanLat = 0;
+        for (int i = 0; i < n; i++) meanLat += lat[i];
+        double k = Math.cos(Math.toRadians(meanLat / n));
+        double minX = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, minY = Double.MAX_VALUE, maxY = -Double.MAX_VALUE;
+        for (int i = 0; i < n; i++) {
+            double x = lon[i] * k, y = -lat[i];
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+        }
+        double w = Math.max(maxX - minX, 1e-9), h = Math.max(maxY - minY, 1e-9);
+        double scale = Math.min(width / w, height / h);
+        double offX = left + (width - w * scale) / 2, offY = top + (height - h * scale) / 2;
+        for (int i = 0; i < n; i++) {
+            out[i * 2] = (float) (offX + (lon[i] * k - minX) * scale);
+            out[i * 2 + 1] = (float) (offY + (-lat[i] - minY) * scale);
+        }
+        return out;
     }
 
     /** The one app whose tile shows the F1 race card in the hero: FanCode, which streams F1. */

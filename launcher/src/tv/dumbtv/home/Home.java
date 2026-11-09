@@ -1000,8 +1000,8 @@ public final class Home extends Activity {
         if (race != null && Info.showsF1(it.id)) {
             heroText(race.name, sessions(race));
             kicker(Info.raceLine(race.round, race.place));
-            if (race.map != null) {
-                circuitHero(race.map);
+            if (race.trackId != null) {
+                trackHero(race);
                 return;
             }
         } else {
@@ -1048,9 +1048,9 @@ public final class Home extends Activity {
         heroKicker.setVisibility(text == null || text.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
-    /** The race card's art: the next circuit's track map, drawn once and kept. */
-    private void circuitHero(File map) {
-        String key = "circuit:" + map.getPath();
+    /** The race card's art: the next circuit's track outline, drawn once and kept. */
+    private void trackHero(Feeds.Race race) {
+        String key = "track:" + race.trackId;
         if (key.equals(heroId)) return;
         Bitmap cached = heroCache.get(key);
         if (cached != null) {
@@ -1059,14 +1059,14 @@ public final class Home extends Activity {
         }
         float aspect = heroAspect();
         colorIo.execute(() -> {
-            Bitmap b = Hero.circuit(map, aspect);
+            Bitmap b = Hero.track(race.trackLon, race.trackLat, aspect);
             ui.post(() -> {
                 if (isDestroyed()) return;
                 if (b != null) heroCache.put(key, b);
                 // Show it only if the race card is still what the hero is showing.
                 Item f = focusedItem();
                 Feeds.Race r = feeds.race;
-                if (f == null || r == null || !map.equals(r.map) || heroSlides != null) return;
+                if (f == null || r == null || !race.trackId.equals(r.trackId) || heroSlides != null) return;
                 if (!Info.showsF1(f.id)) return;
                 showHero(b == null ? null : key, b);
             });
