@@ -46,7 +46,8 @@ final class Tile extends View {
     private boolean moving;
     private final AfterglowTile afterglow;
 
-    private final boolean cinema;
+    private final boolean cinema, cinema2;
+    private final Paint hairline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final float lift;
     private final Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -67,6 +68,7 @@ final class Tile extends View {
         boolean app = Catalog.APPS.equals(kind);
         Config cfg = Config.get(c);
         cinema = cfg.cinema();
+        cinema2 = cfg.cinema2();
         afterglow = app && "afterglow".equals(cfg.get(Config.TILE_STYLE))
                 ? new AfterglowTile(c, item.id, title, accent) : null;
         labelH = app && afterglow == null ? Ui.dp(c, 26) : 0;
@@ -89,6 +91,13 @@ final class Tile extends View {
         under.setTypeface(Ui.MEDIUM);
         under.setTextAlign(Paint.Align.CENTER);
         under.setTextSize(Ui.dp(c, 13));
+        if (cinema2) {
+            under.setTypeface(Ui.label(c));
+            inner.setTypeface(Ui.label(c));
+            hairline.setStyle(Paint.Style.STROKE);
+            hairline.setStrokeWidth(Math.max(1, Ui.dp(c, 1)));
+            hairline.setColor(0x1FFFFFFF);
+        }
 
         if (cinema) {
             // Built here, not in onSizeChanged: a card's size is fixed at construction, and a
@@ -215,8 +224,14 @@ final class Tile extends View {
                 canvas.drawRect(card, sheenPaint);
             }
         }
+        // Cinema 2: a resting tile is a shade darker, so bright logos do not outshine the content.
+        if (cinema2 && !isFocused() && !moving) canvas.drawColor(0x29000000);
         if (moving) canvas.drawColor(0x99000000);
         canvas.restore();
+        if (cinema2 && !isFocused() && !moving) {
+            float h = hairline.getStrokeWidth() / 2;
+            canvas.drawRoundRect(h, h, cardW - h, cardH - h, radius - h, radius - h, hairline);
+        }
 
         if (afterglow != null) afterglow.edge(canvas, cardW, cardH, radius);
 

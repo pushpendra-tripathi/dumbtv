@@ -123,6 +123,9 @@ final class Feeds {
     };
 
     volatile String weather;
+    /** The same weather for the Cinema 2 status corner: degrees and WMO code, or NaN and -1. */
+    volatile double weatherTemp = Double.NaN;
+    volatile int weatherCode = -1;
     volatile Race race;
     volatile Map<String, List<Slide>> slides = Collections.emptyMap();
 
@@ -179,6 +182,8 @@ final class Feeds {
                     "weather-" + slug(name) + ".json", WEATHER_AGE, null);
             JSONObject current = now == null ? null : now.optJSONObject("current");
             if (current == null) return null;
+            weatherTemp = current.getDouble("temperature_2m");
+            weatherCode = current.getInt("weather_code");
             return Info.weather(current.getDouble("temperature_2m"), current.getInt("weather_code"),
                     place.optString("name", name));
         } catch (IOException | JSONException e) {

@@ -13,7 +13,9 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
+import android.animation.ObjectAnimator;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.TransitionDrawable;
 import android.media.tv.TvInputManager;
@@ -37,6 +39,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.LinearInterpolator;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -102,6 +105,20 @@ public final class Home extends Activity {
     private LinearLayout heroBox;
     private TextView heroSub;
     private TextView heroKicker;
+    // ---- Cinema 2 ----
+    private static final int NEAR_BLACK = 0xFF0B0B0E, RACE_RED = 0xFFFF5A5F;
+    private static final long AMBIENT_MS = 2 * 60 * 1000;
+    private LinearLayout whenBox, status;
+    private View headSpacer, scrim;
+    private ScrollView page;
+    private TextView statusTemp, statusClock, optionsChip, settingsChip, optionsIcon, settingsIcon;
+    private TextView wifiButton;
+    private WifiDrawable statusWifiIcon;
+    private int statusSkyKind = -1, heroBandH;
+    private String lastStyle;
+    /** Ambient mode: the controls are faded out and every app's new releases play full screen. */
+    private boolean ambient, swallowKeyUp;
+    private final Runnable goAmbient = this::enterAmbient;
     /** Live feeds: weather and the next race under the clock, new releases in the hero. */
     private Feeds feeds;
     private final ExecutorService net = Executors.newSingleThreadExecutor();
@@ -280,6 +297,7 @@ public final class Home extends Activity {
         tick();
         refreshFeeds(false);
         if (cfg.cinema()) hero(focusedItem());
+        scheduleAmbient();
     }
 
     @Override
@@ -294,6 +312,8 @@ public final class Home extends Activity {
         stopColorAnimation();
         targetColor = 0;
         unregisterReceiver(time);
+        ui.removeCallbacks(goAmbient);
+        leaveAmbient(false);
         stopSlides();
         if (moving != null) stopMoving();
     }
@@ -362,6 +382,7 @@ public final class Home extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (moving != null) stopMoving();
+        leaveAmbient(true);
         if (resumed) focusFirst();
     }
 
@@ -372,6 +393,16 @@ public final class Home extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        if (ambient && e.getAction() == KeyEvent.ACTION_DOWN) {
+            leaveAmbient(true);
+            swallowKeyUp = true;
+            return true;
+        }
+        if (swallowKeyUp && e.getAction() == KeyEvent.ACTION_UP) {
+            swallowKeyUp = false;
+            return true;
+        }
+        scheduleAmbient();
         if (moving == null) return super.dispatchKeyEvent(e);
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
             switch (e.getKeyCode()) {
@@ -514,13 +545,23 @@ public final class Home extends Activity {
         hero = new ImageView(this);
         hero.setScaleType(ImageView.ScaleType.FIT_XY);
         hero.setVisibility(View.GONE);
-        int heroH = Math.round(getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
-        root.addView(hero, new FrameLayout.LayoutParams(MATCH, heroH, Gravity.TOP));
+        heroBandH = Math.round(getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
+        root.addView(hero, new FrameLayout.LayoutParams(MATCH, heroBandH, Gravity.TOP));
+        // Cinema 2: the full-bleed art darkens at the top for the status corner and to near
+        // black at the bottom, where the tiles sit.
+        scrim = new View(this);
+        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] {
+                0x99000000, 0x00000000, 0x00000000, 0xE60B0B0E, NEAR_BLACK}));
+        scrim.setVisibility(View.GONE);
+        root.addView(scrim, new FrameLayout.LayoutParams(MATCH, MATCH));
 
         ScrollView scroll = new ScrollView(this) {
             /** Scrolls in whole rows: the focused row shows complete, and a row starts at the top edge. */
             @Override
             protected int computeScrollDeltaToGetChildRectOnScreen(Rect r) {
+                // Cinema 2 fits on one screen; if it does not, scroll only as far as needed, never
+                // a row to the top, which would slide the status and hero text away.
+                if (cfg.cinema2()) return super.computeScrollDeltaToGetChildRectOnScreen(r);
                 return rowTarget(this, r) - getScrollY();
             }
 
@@ -548,6 +589,7 @@ public final class Home extends Activity {
                 }
             }
         };
+        page = scroll;
         scroll.setFocusable(false);
         scroll.setFillViewport(true);
         scroll.setVerticalScrollBarEnabled(false);
@@ -602,6 +644,14 @@ public final class Home extends Activity {
                             return parent.getChildAt(target);
                         }
                     }
+                    // Up in the apps grid goes to the tile straight above, and from the top line
+                    // to the nearest button. Left to FocusFinder, up from row 2 could land on a
+                    // far tile of row 1, and up from row 1 sideways.
+                    if (direction == View.FOCUS_UP && grid && Catalog.APPS.equals(tile.kind)) {
+                        if (idx - cols >= 0) return parent.getChildAt(idx - cols);
+                        View chip = nearestChip(focused);
+                        if (chip != null) return chip;
+                    }
                     // Up from the first line of the inputs row goes back to the app that was
                     // focused last.
                     if (direction == View.FOCUS_UP
@@ -623,6 +673,7 @@ public final class Home extends Activity {
                     TextView best = null;
                     int bestGap = Integer.MAX_VALUE;
                     for (TextView c : chips) {
+                        if (c.getVisibility() != View.VISIBLE) continue;
                         c.getLocationOnScreen(at);
                         int gap = Math.abs(at[0] + c.getWidth() / 2 - x);
                         if (gap < bestGap) {
@@ -630,7 +681,7 @@ public final class Home extends Activity {
                             best = c;
                         }
                     }
-                    return best != null ? best : chips.get(0);
+                    return best;
                 }
                 return next;
             }
@@ -647,6 +698,7 @@ public final class Home extends Activity {
         head.setGravity(Gravity.TOP);
         head.setPadding(dp(56), 0, dp(56), dp(12));
         LinearLayout when = new LinearLayout(this);
+        whenBox = when;
         when.setOrientation(LinearLayout.VERTICAL);
         clock = Ui.text(this, 52, Ui.TEXT, Ui.LIGHT);
         date = Ui.text(this, 15, Ui.MUTED, Ui.MEDIUM);
@@ -664,14 +716,26 @@ public final class Home extends Activity {
         under.leftMargin = dp(2);
         when.addView(meter, under);
         head.addView(when, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        headSpacer = new View(this);
+        headSpacer.setVisibility(View.GONE);
+        head.addView(headSpacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        head.addView(buildStatus());
         wifiChip = chip("Wi-Fi", v -> openWifi());
         wifiIcon = new WifiDrawable(dp(16), dp(13));
         wifiIcon.setBounds(0, 0, dp(16), dp(13));
         wifiChip.setCompoundDrawables(wifiIcon, null, null, null);
         wifiChip.setCompoundDrawablePadding(dp(8));
         head.addView(wifiChip);
-        head.addView(chip("Options", v -> startActivity(new Intent(this, Options.class))));
-        head.addView(chip("Settings", v -> openSettings()));
+        optionsChip = chip("Options", v -> startActivity(new Intent(this, Options.class)));
+        settingsChip = chip("Settings", v -> openSettings());
+        head.addView(optionsChip);
+        head.addView(settingsChip);
+        wifiButton = iconChip(statusWifiIcon, "Wi-Fi", v -> openWifi());
+        head.addView(wifiButton);
+        optionsIcon = iconChip(Glyph.SLIDERS, "Options", v -> startActivity(new Intent(this, Options.class)));
+        settingsIcon = iconChip(Glyph.GEAR, "Settings", v -> openSettings());
+        head.addView(optionsIcon);
+        head.addView(settingsIcon);
         column.addView(head, new LinearLayout.LayoutParams(MATCH, WRAP));
         heroTitle = Ui.text(this, 38, Ui.TEXT, Ui.LIGHT);
         heroTitle.setGravity(Gravity.BOTTOM | Gravity.START);
@@ -763,7 +827,10 @@ public final class Home extends Activity {
         v.setOnClickListener(click);
         v.setOnFocusChangeListener((view, has) -> {
             view.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(110).start();
-            if (has) focusBackground(null);
+            if (has) {
+                focusBackground(null);
+                dimRows(null);
+            }
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, WRAP);
         lp.leftMargin = dp(10);
@@ -786,6 +853,17 @@ public final class Home extends Activity {
         clock.setTextSize(TypedValue.COMPLEX_UNIT_SP, cinema ? 24 : 52);
         date.setVisibility(cinema ? View.GONE : View.VISIBLE);
         heroBox.setVisibility(cinema ? View.VISIBLE : View.GONE);
+        String style = cfg.get(Config.STYLE);
+        if (!style.equals(lastStyle)) {
+            // Hero art is drawn for one look's band shape; a switch draws it again.
+            lastStyle = style;
+            heroCache.clear();
+            slideCache.clear();
+            hero.setImageDrawable(null);
+            heroShown = null;
+            heroId = null;
+        }
+        applyCinema2(cfg.cinema2());
         if (!cinema || !on(Config.RELEASES)) stopSlides();
         hero.setVisibility(cinema ? View.VISIBLE : View.GONE);
         if (!cinema) {
@@ -882,6 +960,7 @@ public final class Home extends Activity {
                     }
                     focusBackground(tile.item);
                     hero(tile.item);
+                    dimRows(tile);
                 }
             });
             t.setOnLongClickListener(v -> {
@@ -982,7 +1061,7 @@ public final class Home extends Activity {
 
     /** Cinema look: shows {@code it}'s name and its art, blurred, across the top. */
     private void hero(Item it) {
-        if (!cfg.cinema() || it == null) return;
+        if (!cfg.cinema() || it == null || ambient) return;
         // 1. New releases on this app, as a slideshow.
         List<Feeds.Slide> mine = on(Config.RELEASES) ? feeds.slidesFor(it.id) : null;
         if (mine != null && !mine.isEmpty()) {
@@ -999,13 +1078,15 @@ public final class Home extends Activity {
         Feeds.Race race = feeds.race;
         if (race != null && Info.showsF1(it.id)) {
             heroText(race.name, sessions(race));
-            kicker(Info.raceLine(race.round, race.place));
+            if (cfg.cinema2()) kicker(Info.raceKicker(race.round, race.place, System.currentTimeMillis(), race.at), RACE_RED);
+            else kicker(Info.raceLine(race.round, race.place));
             if (race.trackId != null) {
                 trackHero(race);
                 return;
             }
         } else {
-            heroText(Catalog.label(cfg, it), null);
+            // Cinema 2 leaves an app without content to its tile's own name: no title twice.
+            heroText(cfg.cinema2() ? null : Catalog.label(cfg, it), null);
             kicker(null);
         }
         if (it.id.equals(heroId)) return;
@@ -1035,6 +1116,7 @@ public final class Home extends Activity {
     private void heroText(CharSequence title, String sub) {
         String t = title == null ? "" : title.toString();
         if (!t.contentEquals(heroTitle.getText())) {
+            if (cfg.cinema2()) fitTitle(t);
             heroTitle.setText(t);
             heroBox.setAlpha(0f);
             heroBox.animate().alpha(1f).setDuration(220).start();
@@ -1044,6 +1126,11 @@ public final class Home extends Activity {
     }
 
     private void kicker(String text) {
+        kicker(text, RACE_RED);
+    }
+
+    private void kicker(String text, int color) {
+        heroKicker.setTextColor(color);
         heroKicker.setText(text == null ? "" : text);
         heroKicker.setVisibility(text == null || text.isEmpty() ? View.GONE : View.VISIBLE);
     }
@@ -1059,7 +1146,8 @@ public final class Home extends Activity {
         }
         float aspect = heroAspect();
         colorIo.execute(() -> {
-            Bitmap b = Hero.track(race.trackLon, race.trackLat, aspect);
+            Bitmap b = cfg.cinema2() ? Hero.track(race.trackLon, race.trackLat, aspect, 0.13f, 0.47f)
+                    : Hero.track(race.trackLon, race.trackLat, aspect);
             ui.post(() -> {
                 if (isDestroyed()) return;
                 if (b != null) heroCache.put(key, b);
@@ -1080,16 +1168,22 @@ public final class Home extends Activity {
         if (list == null || list.isEmpty()) return;
         int index = slideIndex % list.size();
         Feeds.Slide s = list.get(index);
-        kicker(null);
-        heroText(s.title, "New on " + s.service + (s.series ? "  ·  Series" : "  ·  Film"));
-        String key = "slide:" + s.image.getPath();
+        if (cfg.cinema2()) {
+            kicker(("New on " + s.service + "  ·  " + (s.series ? "Series" : "Film")).toUpperCase(Locale.ROOT), Ui.MUTED);
+            heroText(s.title, null);
+        } else {
+            kicker(null);
+            heroText(s.title, "New on " + s.service + (s.series ? "  ·  Series" : "  ·  Film"));
+        }
+        boolean full = ambient;
+        String key = (full ? "slide:full:" : "slide:") + s.image.getPath();
         Bitmap cached = slideCache.get(key);
         if (cached != null) {
             showHero(key, cached);
         } else {
             float aspect = heroAspect();
             colorIo.execute(() -> {
-                Bitmap b = Hero.backdrop(s.image, aspect);
+                Bitmap b = Hero.backdrop(s.image, aspect, !full);
                 ui.post(() -> {
                     if (b == null || isDestroyed()) return;
                     slideCache.put(key, b);
@@ -1115,6 +1209,9 @@ public final class Home extends Activity {
     }
 
     private float heroAspect() {
+        if (cfg.cinema2()) {
+            return getResources().getDisplayMetrics().widthPixels / (float) getResources().getDisplayMetrics().heightPixels;
+        }
         return getResources().getDisplayMetrics().widthPixels
                 / (getResources().getDisplayMetrics().heightPixels * Hero.HEIGHT);
     }
@@ -1157,11 +1254,26 @@ public final class Home extends Activity {
         }
         info.setText(s);
         info.setVisibility(s.length() > 0 ? View.VISIBLE : View.GONE);
+        double temp = feeds.weatherTemp;
+        int code = feeds.weatherCode;
+        if (feeds.weather == null || Double.isNaN(temp)) {
+            statusTemp.setVisibility(View.GONE);
+            return;
+        }
+        statusTemp.setVisibility(View.VISIBLE);
+        statusTemp.setText(Math.round(temp) + "°");
+        int kind = Info.skyKind(code);
+        if (kind != statusSkyKind) {
+            statusSkyKind = kind;
+            Glyph g = new Glyph(kind, dp(20));
+            g.setBounds(0, 0, dp(20), dp(20));
+            statusTemp.setCompoundDrawables(g, null, null, null);
+        }
     }
 
     /** Wi-Fi bars, or Ethernet, or Offline, on the chip next to Options. */
     private void wifi() {
-        if (wifiChip.getVisibility() != View.VISIBLE) return;
+        if (wifiChip.getVisibility() != View.VISIBLE && wifiButton.getVisibility() != View.VISIBLE) return;
         WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         WifiInfo w = wm == null ? null : wm.getConnectionInfo();
         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -1169,13 +1281,13 @@ public final class Home extends Activity {
         // The DNS filter's VPN is the active network, so Wi-Fi is asked directly first.
         if (w != null && w.getNetworkId() != -1) {
             wifiChip.setText("Wi-Fi");
-            wifiIcon.setBars(Math.max(1, WifiManager.calculateSignalLevel(w.getRssi(), 5)));
+            bars(Math.max(1, WifiManager.calculateSignalLevel(w.getRssi(), 5)));
         } else if (n != null && n.isConnected()) {
             wifiChip.setText(n.getType() == ConnectivityManager.TYPE_ETHERNET ? "Ethernet" : "Online");
-            wifiIcon.setBars(4);
+            bars(4);
         } else {
             wifiChip.setText("Offline");
-            wifiIcon.setBars(0);
+            bars(0);
         }
     }
 
@@ -1228,6 +1340,222 @@ public final class Home extends Activity {
         });
     }
 
+    /** The visible button horizontally nearest {@code from}, or null. */
+    private View nearestChip(View from) {
+        int[] at = new int[2];
+        from.getLocationOnScreen(at);
+        int x = at[0] + from.getWidth() / 2;
+        View best = null;
+        int bestGap = Integer.MAX_VALUE;
+        for (TextView c : chips) {
+            if (c.getVisibility() != View.VISIBLE) continue;
+            c.getLocationOnScreen(at);
+            int gap = Math.abs(at[0] + c.getWidth() / 2 - x);
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    private void bars(int n) {
+        wifiIcon.setBars(n);
+        statusWifiIcon.setBars(n);
+    }
+
+    /** Cinema 2's top-right corner: weather, time, Wi-Fi. Glyphs and small type, no buttons. */
+    private View buildStatus() {
+        status = new LinearLayout(this);
+        status.setOrientation(LinearLayout.HORIZONTAL);
+        status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setVisibility(View.GONE);
+        statusTemp = Ui.text(this, 17, 0xD9FFFFFF, Ui.MEDIUM);
+        statusTemp.setCompoundDrawablePadding(dp(8));
+        statusTemp.setVisibility(View.GONE);
+        statusClock = Ui.text(this, 17, 0xD9FFFFFF, Ui.MEDIUM);
+        statusWifiIcon = new WifiDrawable(dp(18), dp(15));
+        statusWifiIcon.setBounds(0, 0, dp(18), dp(15));
+        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(WRAP, WRAP);
+        gap.rightMargin = dp(22);
+        status.addView(statusTemp, gap);
+        LinearLayout.LayoutParams gap2 = new LinearLayout.LayoutParams(WRAP, WRAP);
+        gap2.rightMargin = dp(22);
+        status.addView(statusClock, gap2);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, dp(44));
+        lp.topMargin = dp(6);
+        status.setLayoutParams(lp);
+        return status;
+    }
+
+    /** A round button carrying only a glyph: Options (sliders) and Settings (gear) in Cinema 2. */
+    private TextView iconChip(int glyph, String name, View.OnClickListener click) {
+        Glyph g = new Glyph(glyph, dp(20));
+        g.setBounds(0, 0, dp(20), dp(20));
+        return iconChip(g, name, click);
+    }
+
+    private TextView iconChip(Drawable icon, String name, View.OnClickListener click) {
+        TextView v = chip("", click);
+        v.setCompoundDrawables(icon, null, null, null);
+        v.setCompoundDrawablePadding(0);
+        v.setPadding(dp(12), dp(12), dp(12), dp(12));
+        v.setGravity(Gravity.CENTER);
+        // An equal circle: fixed 44dp square (applyCinema2 gives it a 22dp radius), 12dp apart.
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(44));
+        lp.leftMargin = dp(12);
+        lp.topMargin = dp(6);
+        v.setLayoutParams(lp);
+        v.setContentDescription(name);
+        v.setVisibility(View.GONE);
+        return v;
+    }
+
+    /** Lays the screen out for Cinema 2, or back for the other looks. */
+    private void applyCinema2(boolean on) {
+        boolean lock = locked();
+        whenBox.setVisibility(on ? View.GONE : View.VISIBLE);
+        headSpacer.setVisibility(on ? View.VISIBLE : View.GONE);
+        status.setVisibility(on ? View.VISIBLE : View.GONE);
+        wifiButton.setVisibility(on && !lock && on(Config.WIFI) ? View.VISIBLE : View.GONE);
+        optionsIcon.setVisibility(on && !lock ? View.VISIBLE : View.GONE);
+        settingsIcon.setVisibility(on && !lock ? View.VISIBLE : View.GONE);
+        optionsChip.setVisibility(!on && !lock ? View.VISIBLE : View.GONE);
+        settingsChip.setVisibility(!on && !lock ? View.VISIBLE : View.GONE);
+        if (on) wifiChip.setVisibility(View.GONE);
+        for (TextView c : new TextView[] {wifiButton, optionsIcon, settingsIcon}) {
+            Ui.focusStyle(c, cfg.accent(), 0x1FFFFFFF, dp(22));
+            Drawable d = c.getCompoundDrawables()[0];
+            if (d instanceof Glyph) ((Glyph) d).setColors(c.getTextColors());
+            if (d instanceof WifiDrawable) ((WifiDrawable) d).setColors(c.getTextColors());
+        }
+        // Cinema 2 fits status, hero text and both rows on one screen: less padding above.
+        View column = page.getChildAt(0);
+        column.setPadding(column.getPaddingLeft(), dp(on ? 22 : 40), column.getPaddingRight(), column.getPaddingBottom());
+        scrim.setVisibility(on ? View.VISIBLE : View.GONE);
+        ViewGroup.LayoutParams hp = hero.getLayoutParams();
+        int heroHeight = on ? MATCH : heroBandH;
+        if (hp.height != heroHeight) {
+            hp.height = heroHeight;
+            hero.setLayoutParams(hp);
+        }
+        ViewGroup.LayoutParams bp = heroBox.getLayoutParams();
+        int boxHeight = dp(on ? 178 : 150);
+        if (bp.height != boxHeight) {
+            bp.height = boxHeight;
+            heroBox.setLayoutParams(bp);
+        }
+        LinearLayout.LayoutParams tp = (LinearLayout.LayoutParams) heroTitle.getLayoutParams();
+        int titleWidth = on ? Math.round(getResources().getDisplayMetrics().widthPixels * 0.55f) : MATCH;
+        if (tp.width != titleWidth) {
+            tp.width = titleWidth;
+            heroTitle.setLayoutParams(tp);
+        }
+        if (on) {
+            heroTitle.setSingleLine(false);
+            heroTitle.setMaxLines(2);
+            heroTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            heroTitle.setLineSpacing(0, 0.95f);
+        } else {
+            heroTitle.setSingleLine();
+            heroTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 38);
+        }
+        heroTitle.setTypeface(on ? Ui.display(this) : Ui.LIGHT);
+        heroKicker.setTypeface(on ? Ui.label(this) : Ui.MEDIUM);
+        heroSub.setTypeface(on ? Ui.label(this) : Ui.MEDIUM);
+        statusTemp.setTypeface(Ui.label(this));
+        statusClock.setTypeface(Ui.label(this));
+        if (!on) {
+            leaveAmbient(false);
+            ui.removeCallbacks(goAmbient);
+        }
+    }
+
+    /** The largest title size, 40sp down to 28sp, that fits {@code t} in two lines. */
+    private void fitTitle(String t) {
+        int width = heroTitle.getLayoutParams().width;
+        if (width <= 0 || t.isEmpty()) {
+            heroTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 40);
+            return;
+        }
+        android.text.TextPaint p = new android.text.TextPaint(heroTitle.getPaint());
+        float sp = 40;
+        for (; sp > 28; sp -= 2) {
+            p.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp, getResources().getDisplayMetrics()));
+            android.text.StaticLayout l = new android.text.StaticLayout(t, p, width,
+                    android.text.Layout.Alignment.ALIGN_NORMAL, 0.95f, 0f, false);
+            if (l.getLineCount() <= 2) break;
+        }
+        heroTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+    }
+
+    /** Cinema 2: only the row with focus is at full brightness; the other rows rest at 55%. */
+    private void dimRows(Tile focused) {
+        if (!cfg.cinema2() || apps == null) return;
+        ViewGroup g = apps.tiles();
+        if (!(g instanceof Grid)) return;
+        int cols = ((Grid) g).columns();
+        int row = focused != null && focused.getParent() == g ? g.indexOfChild(focused) / cols : 0;
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View t = g.getChildAt(i);
+            float a = i / cols == row ? 1f : 0.55f;
+            if (t.getAlpha() != a) ObjectAnimator.ofFloat(t, View.ALPHA, a).setDuration(220).start();
+        }
+    }
+
+    /** Keeps the race card's countdown current while FanCode has focus. */
+    private void refreshRaceKicker() {
+        if (!cfg.cinema2() || ambient) return;
+        Item f = focusedItem();
+        Feeds.Race r = feeds.race;
+        if (f != null && r != null && Info.showsF1(f.id) && heroSlides == null) {
+            kicker(Info.raceKicker(r.round, r.place, System.currentTimeMillis(), r.at), RACE_RED);
+        }
+    }
+
+    private void scheduleAmbient() {
+        ui.removeCallbacks(goAmbient);
+        if (resumed && cfg.cinema2() && on(Config.AMBIENT)) ui.postDelayed(goAmbient, AMBIENT_MS);
+    }
+
+    /** Two idle minutes on the home screen: fade the controls, play every app's new releases. */
+    private void enterAmbient() {
+        if (!resumed || ambient || moving != null || !cfg.cinema2()) return;
+        List<Feeds.Slide> all = new ArrayList<>();
+        for (Item it : Catalog.visible(cfg, Catalog.APPS, apps.all, recentFor(Catalog.APPS))) {
+            all.addAll(feeds.slidesFor(it.id));
+        }
+        ambient = true;
+        page.animate().alpha(0f).setDuration(700).start();
+        scrim.animate().alpha(0.45f).setDuration(700).start();
+        if (!all.isEmpty()) {
+            heroSlides = all;
+            slidesFor = "ambient";
+            slideIndex = 0;
+            showSlide();
+        }
+    }
+
+    /** Back from ambient mode: controls back, the hero shows the focused app again. */
+    private void leaveAmbient(boolean animate) {
+        if (!ambient) return;
+        ambient = false;
+        page.animate().cancel();
+        scrim.animate().cancel();
+        if (animate) {
+            page.animate().alpha(1f).setDuration(250).start();
+            scrim.animate().alpha(1f).setDuration(250).start();
+        } else {
+            page.setAlpha(1f);
+            scrim.setAlpha(1f);
+        }
+        stopSlides();
+        if (animate) {
+            hero(focusedItem());
+            scheduleAmbient();
+        }
+    }
+
     private void showHero(String id, Bitmap b) {
         heroId = id;
         Drawable next = b == null ? new ColorDrawable(Color.TRANSPARENT) : new BitmapDrawable(getResources(), b);
@@ -1235,11 +1563,24 @@ public final class Home extends Activity {
         TransitionDrawable fade = new TransitionDrawable(new Drawable[] {from, next});
         fade.setCrossFadeEnabled(true);
         hero.setImageDrawable(fade);
-        fade.startTransition(320);
+        boolean c2 = cfg.cinema2();
+        fade.startTransition(c2 ? 420 : 320);
         heroShown = next;
+        hero.animate().cancel();
+        hero.setScaleX(1f);
+        hero.setScaleY(1f);
+        if (c2 && b != null && id != null && id.startsWith("slide:")
+                && Settings.Global.getFloat(getContentResolver(), "animator_duration_scale", 1f) != 0f) {
+            // A slow push-in over the slide's eight seconds.
+            hero.setPivotX(hero.getWidth() / 2f);
+            hero.setPivotY(hero.getHeight() * 0.35f);
+            hero.animate().scaleX(1.06f).scaleY(1.06f).setDuration(8400)
+                    .setInterpolator(new LinearInterpolator()).start();
+        }
     }
 
     private void focusBackground(Item it) {
+        if (cfg.cinema2()) return;
         String mode = cfg.get(Config.BACKGROUND);
         if (!resumed || !"adaptive".equals(mode) && !"adaptive-tint".equals(mode)) return;
         if ("adaptive-tint".equals(mode) && !tintWallpaper) return;
@@ -1347,6 +1688,8 @@ public final class Home extends Activity {
             clock.setText(DateFormat.format("h:mm", now));
             clock.append(half);
         }
+        statusClock.setText(DateFormat.format(h24 ? "HH:mm" : "h:mm a", now));
+        refreshRaceKicker();
         Locale locale = Locale.getDefault();
         date.setText(DateFormat.format(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), now));
         if (meter.getVisibility() == View.VISIBLE) {
@@ -1360,6 +1703,19 @@ public final class Home extends Activity {
     }
 
     private void background() {
+        if (cfg.cinema2()) {
+            stopColorAnimation();
+            targetColor = 0;
+            backgroundMode = "cinema2";
+            tint.setBackgroundColor(Color.TRANSPARENT);
+            shade.setBackgroundColor(Color.TRANSPARENT);
+            root.setBackgroundColor(NEAR_BLACK);
+            if (wallKey != null) {
+                wall.setImageDrawable(null);
+                wallKey = null;
+            }
+            return;
+        }
         String mode = cfg.get(Config.BACKGROUND);
         boolean image = "image".equals(mode) || "adaptive-tint".equals(mode);
         File file = image ? cfg.wallpaper() : null;

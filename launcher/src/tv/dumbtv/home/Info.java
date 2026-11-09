@@ -29,6 +29,17 @@ final class Info {
         return "";
     }
 
+    /** Weather glyph kinds; {@link Glyph} draws them. */
+    static final int SKY_SUN = 0, SKY_CLOUD = 1, SKY_RAIN = 2, SKY_SNOW = 3;
+
+    /** Which weather glyph a WMO code gets. */
+    static int skyKind(int code) {
+        if (code == 0 || code == 1) return SKY_SUN;
+        if ((code >= 71 && code <= 77) || code == 85 || code == 86) return SKY_SNOW;
+        if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95) return SKY_RAIN;
+        return SKY_CLOUD;
+    }
+
     /** "26° Clear · Pune". */
     static String weather(double celsius, int code, String city) {
         String sky = sky(code);
@@ -50,6 +61,13 @@ final class Info {
         if (d > 0) return d + "d " + h + "h";
         if (h > 0) return h + "h " + m + "m";
         return m + "m";
+    }
+
+    /** The Cinema 2 race kicker: the race line, then "IN 12D 13H", or "RACING NOW". */
+    static String raceKicker(String round, String place, long now, long at) {
+        String line = raceLine(round, place);
+        String when = now >= at ? "RACING NOW" : "IN " + countdown(now, at).toUpperCase(Locale.ROOT);
+        return line.isEmpty() ? when : line + "  ·  " + when;
     }
 
     /** "ROUND 20  ·  SÃO PAULO, BRAZIL", or just the part that is known. */

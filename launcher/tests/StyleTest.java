@@ -13,7 +13,10 @@ public final class StyleTest {
 
     public static void main(String[] args) throws Exception {
         check("classic".equals(Config.STYLE.fallback), "the 1.7 look stays the default");
-        check(Arrays.asList(Config.STYLE.values).equals(Arrays.asList("classic", "cinema")), "two looks");
+        check(Arrays.asList(Config.STYLE.values).equals(Arrays.asList("classic", "cinema", "cinema2")),
+                "three looks: Cinema 1 stays selectable next to Cinema 2");
+        check("off".equals(Config.AMBIENT.fallback), "ambient mode only when turned on");
+        check(Arrays.asList(Config.CHOICES).contains(Config.AMBIENT), "Ambient mode shows in Options");
         check(Arrays.asList(Config.CHOICES).contains(Config.STYLE), "Look shows in Options");
 
         // The README's home.conf sample and settings table name every look.

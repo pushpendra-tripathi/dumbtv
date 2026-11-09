@@ -66,6 +66,11 @@ final class Hero {
      * on the left where the title sits, and faded out at the bottom like the blurred art.
      */
     static Bitmap backdrop(java.io.File file, float aspect) {
+        return backdrop(file, aspect, true);
+    }
+
+    /** As above; without {@code shade}, the whole picture, for ambient mode where no text sits on it. */
+    static Bitmap backdrop(java.io.File file, float aspect, boolean shade) {
         if (file == null || aspect <= 0) return null;
         android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
         o.inJustDecodeBounds = true;
@@ -86,6 +91,7 @@ final class Hero {
             android.graphics.RectF dst = new android.graphics.RectF((BACKDROP_W - dw) / 2, (outH - dh) * 0.3f,
                     (BACKDROP_W + dw) / 2, (outH - dh) * 0.3f + dh);
             c.drawBitmap(src, null, dst, new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG));
+            if (!shade) return out;
             Paint side = new Paint();
             side.setShader(new LinearGradient(0, 0, BACKDROP_W * 0.65f, 0,
                     0xB0000000, 0x00000000, Shader.TileMode.CLAMP));
@@ -111,13 +117,18 @@ final class Hero {
      * so the wallpaper shows.
      */
     static Bitmap track(double[] lon, double[] lat, float aspect) {
+        return track(lon, lat, aspect, 0.28f, 0.78f);
+    }
+
+    /** As above, with the outline between {@code top} and {@code bottom}, fractions of the band. */
+    static Bitmap track(double[] lon, double[] lat, float aspect, float top, float bottom) {
         if (lon == null || lat == null || lon.length < 3 || aspect <= 0) return null;
         try {
             int outH = Math.max(1, Math.round(BACKDROP_W / aspect));
             Bitmap out = Bitmap.createBitmap(BACKDROP_W, outH, Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(out);
             // Right of the band, below the chips and clear of the title and the first tile row.
-            float boxL = BACKDROP_W * 0.58f, boxR = BACKDROP_W * 0.94f, boxT = outH * 0.28f, boxB = outH * 0.78f;
+            float boxL = BACKDROP_W * 0.58f, boxR = BACKDROP_W * 0.94f, boxT = outH * top, boxB = outH * bottom;
             float[] pts = Info.fit(lon, lat, boxL, boxT, boxR - boxL, boxB - boxT);
             android.graphics.Path path = new android.graphics.Path();
             path.moveTo(pts[0], pts[1]);

@@ -63,7 +63,8 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 
 | Setting | Choices |
 |---|---|
-| Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden |
+| Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden; Cinema 2: the art fills the whole screen behind the tiles, weather, time and Wi-Fi sit as small glyphs in the top-right corner beside two icon buttons (Options, Settings), titles are set in Inter and fit two lines, only the focused row is at full brightness, release slides push in slowly; Cinema stays selectable as it was |
+| Ambient mode | off (default), on (Cinema 2): after two idle minutes on the home screen the controls fade and every app's new releases play full screen; the first key press brings the controls back and does nothing else |
 | Weather | off (default), on: temperature and sky for `weather.city` under the clock |
 | F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; on the FanCode tile the Cinema hero shows the next race: its track outline, round, place and the upcoming sessions in the TV's time |
 | New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5, discovery+), eight seconds each. Needs `tmdb.key` |
@@ -115,6 +116,8 @@ premiered in the last 180 that stream on that service in India, most popular fir
 per app. A title on two installed services shows under the first of them in your order.
 OK on a slide opens the app, not the title: TMDB does not know the apps' own title ids.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+Cinema 2 sets its text in [Inter](https://github.com/rsms/inter) 4.1 (Inter Display Light, Inter Medium), under the SIL Open Font License 1.1: see `FONT-LICENSE.txt`.
 
 The F1 race card draws the next circuit's outline from
 [f1-circuits](https://github.com/bacinger/f1-circuits) (MIT), matched to the race by
@@ -169,8 +172,10 @@ Everything lives in one text file on the TV:
 ```
 
 ```ini
-# classic cinema
+# classic cinema cinema2
 style=classic
+# off on (Cinema 2 only)
+ambient=off
 # off on, each; nothing goes online while all three are off
 weather=off
 f1=off

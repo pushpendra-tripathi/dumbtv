@@ -111,7 +111,13 @@ final class Config {
      * Classic is the look of 1.7 and earlier.
      */
     static final Choice STYLE = new Choice("style", "Look", "classic",
-            new String[] {"classic", "cinema"}, new String[] {"Classic", "Cinema"});
+            new String[] {"classic", "cinema", "cinema2"}, new String[] {"Classic", "Cinema", "Cinema 2"});
+    /**
+     * Cinema 2 only: after two idle minutes on the home screen the controls fade out and new
+     * releases play full screen until a key is pressed.
+     */
+    static final Choice AMBIENT = new Choice("ambient", "Ambient mode", "off",
+            new String[] {"off", "on"}, new String[] {"Off", "On"});
     /** Live feeds. Each one asks the network only while it is on; all are off by default. */
     static final Choice WEATHER = new Choice("weather", "Weather", "off",
             new String[] {"off", "on"}, new String[] {"Off", "On"});
@@ -124,10 +130,17 @@ final class Config {
     /** Free-text keys, set in home.conf: the weather city, and the owner's TMDB API key. */
     static final String CITY = "weather.city";
     static final String TMDB_KEY = "tmdb.key";
-    static final Choice[] CHOICES = {STYLE, WEATHER, F1, RELEASES, WIFI, ACCENT, TILES, LAYOUT, ORDER, LABELS, CLOCK, MEMORY, INPUTS, SWITCH, BACKGROUND, DIM, ROTATE, LOCK, TILE_STYLE};
+    static final Choice[] CHOICES = {STYLE, AMBIENT, WEATHER, F1, RELEASES, WIFI, ACCENT, TILES, LAYOUT, ORDER, LABELS, CLOCK, MEMORY, INPUTS, SWITCH, BACKGROUND, DIM, ROTATE, LOCK, TILE_STYLE};
 
+    /** Cinema or Cinema 2: both have the hero, the lifted tiles and the light sweep. */
     boolean cinema() {
-        return "cinema".equals(get(STYLE));
+        String s = get(STYLE);
+        return "cinema".equals(s) || "cinema2".equals(s);
+    }
+
+    /** Cinema 2: full-bleed hero, status corner, icon buttons, dimmed rows, Inter. */
+    boolean cinema2() {
+        return "cinema2".equals(get(STYLE));
     }
 
     /** Folder of wallpapers, next to home.conf, that Background › Image file rotates through. */

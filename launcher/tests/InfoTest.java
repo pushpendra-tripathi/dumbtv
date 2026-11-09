@@ -25,6 +25,12 @@ public final class InfoTest {
         check("now".equals(Info.countdown(10, 10)), "at the start");
 
         check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
+        check(Info.skyKind(0) == Info.SKY_SUN && Info.skyKind(3) == Info.SKY_CLOUD, "sun, cloud");
+        check(Info.skyKind(63) == Info.SKY_RAIN && Info.skyKind(95) == Info.SKY_RAIN, "rain, storm");
+        check(Info.skyKind(73) == Info.SKY_SNOW, "snow");
+        check("ROUND 21  ·  LAS VEGAS, USA  ·  IN 2D 4H".equals(Info.raceKicker("21", "Las Vegas, USA", 0,
+                2 * Info.DAY + 4 * Info.HOUR + 1)), "race kicker with countdown");
+        check("ROUND 21  ·  RACING NOW".equals(Info.raceKicker("21", ", ", 10, 5)), "racing now");
         // Interlagos as Jolpica places it, against two track centres from f1-circuits.
         double[] lats = {36.1147, -23.7019, Double.NaN}, lons = {-115.1706, -46.6985, 0};
         check(Info.nearest(-23.7036, -46.6997, lats, lons, 20) == 1, "nearest track is Interlagos");
