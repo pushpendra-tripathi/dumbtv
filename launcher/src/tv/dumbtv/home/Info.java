@@ -134,6 +134,35 @@ final class Info {
         return out;
     }
 
+    /**
+     * How to open a new-release title in its app, as {kind, value}: {"view", link} for an app
+     * that takes a link to the title or to its search, {"search", query} for one that takes
+     * Android's search request; null when only the app itself can be opened.
+     */
+    static String[] openPlan(String pkg, String title, String serviceId) {
+        if (pkg == null || title == null) return null;
+        switch (pkg) {
+            case "com.netflix.ninja":
+                return serviceId == null || !serviceId.matches("\\d+") ? null
+                        : new String[] {"view", "https://www.netflix.com/title/" + serviceId};
+            case "com.amazon.firebat":
+                return new String[] {"view", "https://app.primevideo.com/search?phrase=" + encode(title)};
+            case "in.startv.hotstar":
+                return new String[] {"search", title};
+            default:
+                return null;
+        }
+    }
+
+    /** Percent-encoding for a query value, with %20 for spaces. */
+    static String encode(String s) {
+        try {
+            return java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** The one app whose tile shows the F1 race card in the hero: FanCode, which streams F1. */
     static boolean showsF1(String pkg) {
         return "com.fancode.tv".equals(pkg);

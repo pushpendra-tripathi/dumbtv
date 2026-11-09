@@ -25,6 +25,15 @@ public final class InfoTest {
         check("now".equals(Info.countdown(10, 10)), "at the start");
 
         check(Info.showsF1("com.fancode.tv"), "FanCode carries the schedule all season");
+        String[] nf = Info.openPlan("com.netflix.ninja", "Dead-End Job", "81997887");
+        check("view".equals(nf[0]) && "https://www.netflix.com/title/81997887".equals(nf[1]), "Netflix title page");
+        check(Info.openPlan("com.netflix.ninja", "Gajab Raat", null) == null, "Netflix without an id: the app");
+        check(Info.openPlan("com.netflix.ninja", "x", "1; rm") == null, "a malformed id is not used");
+        String[] pv = Info.openPlan("com.amazon.firebat", "Apocalypse Z: New World", null);
+        check("https://app.primevideo.com/search?phrase=Apocalypse%20Z%3A%20New%20World".equals(pv[1]), "Prime search link");
+        String[] hs = Info.openPlan("in.startv.hotstar", "Law & Order", null);
+        check("search".equals(hs[0]) && "Law & Order".equals(hs[1]), "JioHotstar search request");
+        check(Info.openPlan("com.zee5.amazon", "Brown", null) == null, "ZEE5: the app");
         check(Info.skyKind(0) == Info.SKY_SUN && Info.skyKind(3) == Info.SKY_CLOUD, "sun, cloud");
         check(Info.skyKind(63) == Info.SKY_RAIN && Info.skyKind(95) == Info.SKY_RAIN, "rain, storm");
         check(Info.skyKind(73) == Info.SKY_SNOW, "snow");

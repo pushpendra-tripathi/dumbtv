@@ -97,13 +97,22 @@ final class Feeds {
         final String pkg, service, title;
         final boolean series;
         final File image;
+        /** TMDB's id for the title, and the service's own id for it where Wikidata has one. */
+        final int tmdbId;
+        final String serviceId;
 
-        Slide(String pkg, String service, String title, boolean series, File image) {
+        Slide(String pkg, String service, String title, boolean series, File image, int tmdbId, String serviceId) {
             this.pkg = pkg;
             this.service = service;
             this.title = title;
             this.series = series;
             this.image = image;
+            this.tmdbId = tmdbId;
+            this.serviceId = serviceId;
+        }
+
+        Slide withServiceId(String id) {
+            return new Slide(pkg, service, title, series, image, tmdbId, id);
         }
     }
 
@@ -349,17 +358,59 @@ final class Feeds {
                 if (!image.isFile() && !download("https://image.tmdb.org/t/p/w780" + path, image)) continue;
                 keep.add(image);
                 boolean series = r.optBoolean("_series");
-                mine.add(new Slide(pkg, service, r.optString(series ? "name" : "title"), series, image));
+                mine.add(new Slide(pkg, service, r.optString(series ? "name" : "title"), series, image,
+                        r.optInt("id", -1), null));
             }
             if (!mine.isEmpty()) out.put(pkg, Collections.unmodifiableList(mine));
         }
+        // Netflix opens a title only by its own id; Wikidata maps TMDB ids to it for many titles.
+        List<Slide> netflix = out.get("com.netflix.ninja");
+        if (netflix != null) out.put("com.netflix.ninja", withNetflixIds(netflix, keep));
         File[] files = dir.listFiles();
         if (files != null) {
             for (File f : files) {
                 if (f.getName().startsWith("img-") && !keep.contains(f)) f.delete();
+                if (f.getName().startsWith("wd-") && !keep.contains(f)) f.delete();
             }
         }
         return Collections.unmodifiableMap(out);
+    }
+
+    /**
+     * {@code slides} with their Netflix ids (Wikidata P1874), looked up by TMDB id (P4947 films,
+     * P4983 series) in one query; a title Wikidata does not know keeps none and opens the app.
+     */
+    private List<Slide> withNetflixIds(List<Slide> slides, Set<File> keep) {
+        StringBuilder films = new StringBuilder(), series = new StringBuilder();
+        for (Slide s : slides) {
+            if (s.tmdbId < 0) continue;
+            (s.series ? series : films).append(" \"").append(s.tmdbId).append('"');
+        }
+        String sparql = "SELECT ?f ?t ?nf WHERE { { VALUES ?f {" + films + " } ?i wdt:P4947 ?f . }"
+                + " UNION { VALUES ?t {" + series + " } ?i wdt:P4983 ?t . } ?i wdt:P1874 ?nf . }";
+        String name = "wd-" + Integer.toHexString(sparql.hashCode()) + ".json";
+        keep.add(new File(dir, name));
+        JSONObject res;
+        try {
+            res = json("https://query.wikidata.org/sparql?format=json&query=" + URLEncoder.encode(sparql, "UTF-8"),
+                    name, RELEASES_AGE, null);
+        } catch (IOException e) {
+            return slides;
+        }
+        JSONArray rows = res == null ? null : res.optJSONObject("results") == null ? null
+                : res.optJSONObject("results").optJSONArray("bindings");
+        if (rows == null) return slides;
+        Map<String, String> ids = new HashMap<>();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject b = rows.optJSONObject(i);
+            if (b == null || b.optJSONObject("nf") == null) continue;
+            JSONObject key = b.optJSONObject("f") != null ? b.optJSONObject("f") : b.optJSONObject("t");
+            if (key == null) continue;
+            ids.put((b.optJSONObject("f") != null ? "m" : "t") + key.optString("value"), b.optJSONObject("nf").optString("value"));
+        }
+        List<Slide> out = new ArrayList<>();
+        for (Slide s : slides) out.add(s.withServiceId(ids.get((s.series ? "t" : "m") + s.tmdbId)));
+        return Collections.unmodifiableList(out);
     }
 
     private static void collect(List<JSONObject> into, JSONObject page, boolean series) {
@@ -494,6 +545,8 @@ final class Feeds {
             if (x.size() != y.size()) return false;
             for (int i = 0; i < x.size(); i++) {
                 if (!x.get(i).image.equals(y.get(i).image)) return false;
+                String idX = x.get(i).serviceId, idY = y.get(i).serviceId;
+                if (idX == null ? idY != null : !idX.equals(idY)) return false;
             }
         }
         return true;

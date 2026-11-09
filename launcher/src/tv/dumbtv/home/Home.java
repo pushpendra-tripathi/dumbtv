@@ -400,12 +400,12 @@ public final class Home extends Activity {
             swallowKeyUp = true;
             int code = e.getKeyCode();
             boolean select = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
-                    || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+                    || code == KeyEvent.KEYCODE_NUMPAD_ENTER || isPlayKey(code);
             Feeds.Slide shown = select ? currentSlide() : null;
-            Item app = shown == null ? null : findApp(shown.pkg);
-            leaveAmbient(app == null);
-            // OK on a slide opens its app (not the title itself: no app ids are known for it).
-            if (app != null) launch(appIntent(app), app.id);
+            boolean opens = shown != null && findApp(shown.pkg) != null;
+            leaveAmbient(!opens);
+            // OK or Play on a slide opens that title as far as its app allows (see openSlide).
+            if (opens) openSlide(shown);
             return true;
         }
         if (swallowKeyUp && e.getAction() == KeyEvent.ACTION_UP) {
@@ -413,6 +413,13 @@ public final class Home extends Activity {
             return true;
         }
         scheduleAmbient();
+        // Play on the home screen, while the hero shows a release slide: open that title.
+        if (moving == null && e.getAction() == KeyEvent.ACTION_DOWN && isPlayKey(e.getKeyCode())
+                && cfg.cinema() && heroSlides != null && currentSlide() != null) {
+            swallowKeyUp = true;
+            openSlide(currentSlide());
+            return true;
+        }
         if (moving == null) return super.dispatchKeyEvent(e);
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
             switch (e.getKeyCode()) {
@@ -1205,7 +1212,7 @@ public final class Home extends Activity {
         boolean full = ambient;
         if (ambient) {
             ambientKicker.setText(("New on " + s.service + "  ·  " + (s.series ? "Series" : "Film")).toUpperCase(Locale.ROOT)
-                    + "   ·   OK TO OPEN");
+                    + "   ·   PLAY TO OPEN");
             ambientTitle.setText(s.title);
             ambientCaption.setAlpha(0f);
             ambientCaption.animate().alpha(1f).setStartDelay(300).setDuration(500).start();
@@ -1553,6 +1560,44 @@ public final class Home extends Activity {
     private Feeds.Slide currentSlide() {
         List<Feeds.Slide> list = heroSlides;
         return list == null || list.isEmpty() ? null : list.get(slideIndex % list.size());
+    }
+
+    private static boolean isPlayKey(int code) {
+        return code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY;
+    }
+
+    /**
+     * Opens a release slide's title: Netflix at the title's page when its Netflix id is known,
+     * Prime Video at its search for the title, JioHotstar through Android's search request;
+     * otherwise, or if the app refuses, the app itself. The app's own screens are cleared first,
+     * or an app already running brings back where it was and drops the link.
+     */
+    private void openSlide(Feeds.Slide s) {
+        Item app = findApp(s.pkg);
+        if (app == null) return;
+        String[] plan = Info.openPlan(s.pkg, s.title, s.serviceId);
+        Intent i = null;
+        if (plan != null && "view".equals(plan[0])) {
+            i = new Intent(Intent.ACTION_VIEW, Uri.parse(plan[1])).setPackage(s.pkg);
+        } else if (plan != null && "search".equals(plan[0])) {
+            i = new Intent(Intent.ACTION_SEARCH).setPackage(s.pkg).putExtra(android.app.SearchManager.QUERY, plan[1]);
+        }
+        if (i != null && "com.netflix.ninja".equals(s.pkg)) {
+            // Netflix drops a title link it was not launched for by a partner launcher: it restarts
+            // itself on its home. With source 30 (partner launch) and kept out of recents, it opens
+            // the title's page (checked on a Fire TV Stick, Fire OS 7.7).
+            i.putExtra("source", "30").addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+        }
+        if (i != null && i.resolveActivity(getPackageManager()) != null) {
+            try {
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+                Recent.opened(this, s.pkg);
+                return;
+            } catch (ActivityNotFoundException | SecurityException e) {
+                // falls through to the app itself
+            }
+        }
+        launch(appIntent(app), app.id);
     }
 
     /** The installed app with this package, or null. */

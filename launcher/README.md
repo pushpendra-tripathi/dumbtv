@@ -64,7 +64,7 @@ you open an app. On Fire OS 7 and 8 the Settings button opens Amazon's settings 
 | Setting | Choices |
 |---|---|
 | Look | Classic (default), Cinema: the focused app's art fills the top of the screen, blurred, with its name; a focused tile lifts with a shadow and one sweep of light instead of a ring; the clock is small and the date and Apps title are hidden; Cinema 2: the art fills the whole screen behind the tiles, weather, time and Wi-Fi sit as small glyphs in the top-right corner beside two icon buttons (Options, Settings), titles are set in Inter and fit two lines, only the focused row is at full brightness, release slides push in slowly; Cinema stays selectable as it was |
-| Ambient mode | off (default), on (Cinema 2): after two idle minutes on the home screen the controls fade and every app's new releases play full screen; each shows its service and title in a small caption; OK opens that app (not the title itself), any other key brings the controls back and does nothing else |
+| Ambient mode | off (default), on (Cinema 2): after two idle minutes on the home screen the controls fade and every app's new releases play full screen; each shows its service and title in a small caption; OK or Play/Pause opens that title (see Live feeds), any other key brings the controls back and does nothing else |
 | Weather | off (default), on: temperature and sky for `weather.city` under the clock |
 | F1 countdown | off (default), on: the next Grand Prix and the time to it under the clock; on the FanCode tile the Cinema hero shows the next race: its track outline, round, place and the upcoming sessions in the TV's time |
 | New releases | off (default), on: in the Cinema look, the hero shows backdrops of new films and series on the focused app (Netflix, Prime Video, JioHotstar, SonyLIV, ZEE5, discovery+), eight seconds each. Needs `tmdb.key` |
@@ -114,7 +114,10 @@ thread, and keeps its last answer on the TV so a failed request changes nothing 
 New releases are TMDB's list of films released in the last 120 days and series that
 premiered in the last 180 that stream on that service in India, most popular first, five
 per app. A title on two installed services shows under the first of them in your order.
-OK on a slide opens the app, not the title: TMDB does not know the apps' own title ids.
+Play/Pause on a slide (on the home screen or in ambient mode, where OK does the same) opens the
+title as far as its app allows: Netflix at the title's page when Wikidata records its Netflix id
+(looked up by TMDB id), Prime Video at its search for the title, JioHotstar through Android's
+search request; any other app, or a Netflix title Wikidata does not know, opens the app.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 Cinema 2 sets its text in [Inter](https://github.com/rsms/inter) 4.1 (Inter Display Light, Inter Medium), under the SIL Open Font License 1.1: see `FONT-LICENSE.txt`.
